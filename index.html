@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>ОДНА НОГА ЗДЕСЬ v1.2</title>
+    <title>LEG FINDER SIMULATOR</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -179,6 +179,8 @@
         let pv = false, px = 650, py = GROUND-25, hep = false, hpt = 0;
         let lvlTitle = "", lvlTitleTimer = 0;
         let cameraX = 0;
+        let targetCameraX = 0;
+        let cameraDelay = 0;
         let gameStarted = false;
         let gamePaused = false;
         let startPulse = 0;
@@ -428,6 +430,19 @@
             if (dt > 0.1) dt = 0.1;
             if (!gameStarted || gamePaused) return;
             
+            // Плавное движение камеры
+            if (cameraDelay > 0) {
+                cameraDelay -= dt;
+            }
+            if (cameraDelay <= 0) {
+                // Камера плавно догоняет героя
+                const diff = targetCameraX - cameraX;
+                cameraX += diff * 0.1;
+                if (Math.abs(diff) < 1) {
+                    cameraX = targetCameraX;
+                }
+            }
+            
             if (gameState === ST_START) {
                 if (keys['ArrowLeft'] || keys['KeyA']) { hero.x -= hero.speed; hero.fr = false; hero.wt += dt; }
                 else if (keys['ArrowRight'] || keys['KeyD']) { hero.x += hero.speed; hero.fr = true; hero.wt += dt; }
@@ -448,7 +463,7 @@
                     if (hpt <= 0) {
                         gameState = ST_LEVEL1; lvlTitle = "ПЕРВЫЙ УРОВЕНЬ"; lvlTitleTimer = 2.0;
                         hero.x = 50; hero.y = GROUND - 140; hero.vy = 0; hero.alive = true; hero.hp = 50;
-                        hero.hc = 0; hero.onGround = false; hero.mb = 0; cameraX = 0;
+                        hero.hc = 0; hero.onGround = false; hero.mb = 0; cameraX = 0; targetCameraX = 0; cameraDelay = 0;
                         bullets = []; ebullets = []; hero.rh = 0; hero.ur = false; hero.ua = false;
                         simakDied = false; endingActive = false; endingTimer = 2.7; endingFade = 0;
                     }
@@ -582,10 +597,12 @@
                             }
                         }
                         if (e.x < 0) e.x = 0; if (e.x > WORLD_W - 135) e.x = WORLD_W - 135;
-                            if (e.atyp === "melee" && e.st === "chase" && adx < 50 && hero.alive && hero.onGround && hero.hc <= 0 && e.hc <= 0) {
+                        if (e.atyp === "melee" && e.st === "chase" && adx < 50 && hero.alive && hero.onGround && hero.hc <= 0 && e.hc <= 0) {
                             let dmg = e.dmg; if (hero.ua) dmg = Math.max(1, dmg - 1);
-                            hero.hp -= dmg; hero.hc = 0.08; e.hc = 0.7;
-                            hero.at = 0.08;
+                            hero.hp -= dmg; hero.hc = 1.5; e.hc = 0.7;
+                            if (hero.x < e.x) { hero.x -= 40; } else { hero.x += 40; }
+                            // Задержка камеры: она догонит героя через 0.4 секунды
+                            cameraDelay = 0.4;
                         }
                         if (e.hp <= 0 && e.st !== "dead") {
                             e.st = "dead";
@@ -615,9 +632,18 @@
                     }
                 }
                 
-                cameraX = hero.x - W/2;
-                if (cameraX < 0) cameraX = 0;
-                if (cameraX > WORLD_W - W) cameraX = WORLD_W - W;
+                // Обновляем целевую позицию камеры
+                targetCameraX = hero.x - W/2;
+                if (targetCameraX < 0) targetCameraX = 0;
+                if (targetCameraX > WORLD_W - W) targetCameraX = WORLD_W - W;
+                
+                // Если нет задержки — камера сразу за героем
+                if (cameraDelay <= 0) {
+                    const diff = targetCameraX - cameraX;
+                    cameraX += diff * 0.15;
+                    if (Math.abs(diff) < 1) cameraX = targetCameraX;
+                }
+                
                 if (dissShow) { dissTimer -= dt; if (dissTimer <= 0) dissShow = false; }
             }
             if (lvlTitleTimer > 0) lvlTitleTimer -= dt;
@@ -686,7 +712,6 @@
             if (e.code === 'KeyG') kp['KeyG'] = true;
             if (e.code === 'Space') { kp['Space'] = true; e.preventDefault(); }
             
-            if (e.code === 'KeyE' && dialogSt === DIALOG_REPLICA && dialogNxt) { dialogNxt(); e.preventDefault(); }
             if (e.code === 'Digit1' && dialogSt === DIALOG_CHOICES && dialogCh.length >= 1 && dialogNxt) { dialogNxt(0); e.preventDefault(); }
             if (e.code === 'Digit2' && dialogSt === DIALOG_CHOICES && dialogCh.length >= 2 && dialogNxt) { dialogNxt(1); e.preventDefault(); }
             if (e.code === 'Digit3' && dialogSt === DIALOG_CHOICES && dialogCh.length >= 3 && dialogNxt) { dialogNxt(2); e.preventDefault(); }
@@ -701,6 +726,7 @@
                 dialogAct = false; dialogSt = DIALOG_NONE; dialogComp = false;
                 hero.ua = false; hero.uph = 0; hero.ur = false; hero.rh = 0; dissShow = false;
                 simakDied = false; endingActive = false; endingTimer = 2.7; endingFade = 0;
+                cameraX = 0; targetCameraX = 0; cameraDelay = 0;
                 updateDialogUI();
             }
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
@@ -734,6 +760,7 @@
                     dialogAct = false; dialogSt = DIALOG_NONE; dialogComp = false;
                     hero.ua = false; hero.uph = 0; hero.ur = false; hero.rh = 0; dissShow = false;
                     simakDied = false; endingActive = false; endingTimer = 2.7; endingFade = 0;
+                    cameraX = 0; targetCameraX = 0; cameraDelay = 0;
                     updateDialogUI();
                 }
             });
