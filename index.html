@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>ОДНА НОГА ЗДЕСЬ v 1.1</title>
+    <title>LEG FINDER SIMULATOR</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -112,12 +112,7 @@
             return new Promise(resolve => {
                 const img = new Image();
                 img.onload = () => { loaded++; updateLoading(); resolve(img); };
-                img.onerror = () => { 
-                    console.error('Ошибка загрузки: ' + name + '.png');
-                    loaded++; 
-                    updateLoading(); 
-                    resolve(null); 
-                };
+                img.onerror = () => { loaded++; updateLoading(); resolve(null); };
                 img.src = name + '.png';
             });
         }
@@ -159,7 +154,8 @@
         let dialogSt = DIALOG_NONE, dialogAct = false, dialogComp = false;
         let dialogRep = "", dialogCh = [], dialogNxt = null;
         let dissShow = false, dissTimer = 0;
-        let endingActive = false, endingTimer = 0, endingFade = 0;
+        let endingActive = false, endingTimer = 2.7, endingFade = 0;
+        let simakDied = false;
         
         let bv = false, btFull = "Am I glad to see you! The LEG...and I...and, well, everybody...we're all trapped inside the castle walls. Короче, Меченый, иди и ищи свою ногу. А то пока что НЕНАХОД.";
         let btDisp = "", btIdx = 0, btTimer = 0, btSpeed = 0.03, btDone = false;
@@ -200,10 +196,10 @@
         function dch(choices, next) { dialogSt = DIALOG_CHOICES; dialogCh = choices; dialogNxt = next; }
         function dend() { dialogSt = DIALOG_NONE; dialogAct = false; dialogComp = true; }
         function hhd(d) { hero.hp -= d; if (hero.hp <= 0) hero.hp = 1; dend(); }
-        function bsim() { for (const e of enemies) if (e.t === "simak" && e.alive) { e.hp += 20; e.maxHp += 20; e.dmg += 1; } dend(); }
-        function ksim() { for (const e of enemies) if (e.t === "simak" && e.alive) { e.hp = 0; e.st = "dead"; e.y = GROUND + 15; } dend(); }
+        function bsim() { for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp += 20; e.maxHp += 20; e.dmg += 1; } dend(); }
+        function ksim() { for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp = 0; e.st = "dead"; e.y = GROUND + 15; simakDied = true; } dend(); }
         function spj(c, t) { let sx = 5700; for (const e of enemies) if (e.t === "simak") { sx = e.x; break; } for (let i = 0; i < c; i++) { enemies.push({ t, x: sx + 150 + i * 80, y: GROUND - 30, hp: 4, maxHp: 4, sp: 2, dmg: t === "judge1" ? 2 : (t === "judge2" ? 2 : 1), fr: true, ar: t === "judge1" ? 370 : 320, hc: 0, wt: 0, wf: 0, alive: true, ht: 0, st: "idle", dt: 0, vy: 0, atyp: t === "judge1" ? "ranged" : "melee", sc: 0, sh: true }); } dend(); }
-        function bboth() { hero.hp += 5; hero.mb += 2; for (const e of enemies) if (e.t === "simak" && e.alive) { e.hp += 5; e.maxHp += 5; e.dmg += 2; } dend(); }
+        function bboth() { hero.hp += 5; hero.mb += 2; for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp += 5; e.maxHp += 5; e.dmg += 2; } dend(); }
         
         function h1() { drp("Караван идет", () => dend()); }
         function h2() {
@@ -299,7 +295,6 @@
                 let sn = hep ? "hero_jump" : (hero.wt > 0 ? "hero_walk" + (hero.wf === 0 ? "1" : "2") : "hero_stand");
                 drawSpr(sn, hero.x, hero.y, 100, 140, hero.fr);
                 
-                // Легенда в стартовой локации
                 ctx.fillStyle = "rgba(255,255,255,0.5)";
                 ctx.font = "11px Arial";
                 ctx.fillText("←→ / A D — перемещение", W - 200, H - 60);
@@ -336,7 +331,6 @@
                 let hpI = hpP > 0.8 ? 0 : hpP > 0.5 ? 1 : hpP > 0.25 ? 2 : hpP > 0 ? 3 : 4;
                 drawImg('hero_hp_' + (hpI+1), 10, 10, 200, 40);
                 
-                // Легенда управления (полная)
                 ctx.fillStyle = "rgba(255,255,255,0.6)";
                 ctx.font = "11px Arial";
                 ctx.fillText("←→ / A D — перемещение", W - 200, H - 60);
@@ -368,7 +362,7 @@
             }
             
             // Концовка
-            if (endingActive && endingTimer <= 0 && endingFade > 0) {
+            if (endingActive) {
                 ctx.fillStyle = "rgba(0,0,0," + Math.min(endingFade, 1) + ")";
                 ctx.fillRect(0, 0, W, H);
                 if (endingFade >= 1) {
@@ -426,6 +420,7 @@
                         hero.x = 50; hero.y = GROUND - 140; hero.vy = 0; hero.alive = true; hero.hp = 50;
                         hero.hc = 0; hero.onGround = false; hero.mb = 0; cameraX = 0;
                         bullets = []; ebullets = []; hero.rh = 0; hero.ur = false; hero.ua = false;
+                        simakDied = false; endingActive = false; endingTimer = 2.7; endingFade = 0;
                     }
                 }
             } else if (gameState === ST_LEVEL1) {
@@ -552,13 +547,13 @@
                             if (hero.x < e.x) { hero.x -= 40; hero.vy = -8; } else { hero.x += 40; hero.vy = -8; }
                             hero.onGround = false;
                         }
+                        if (e.hp <= 0 && e.st !== "dead") {
+                            e.st = "dead";
                             if (e.t === "simak") { 
                                 e.y = GROUND + 15; e.alive = true;
-                                if (!endingActive) {
-                                    endingActive = true;
-                                    endingTimer = 2.7;
-                                    console.log('ENDING STARTED: simak defeated');
-                                }
+                                simakDied = true;
+                                endingActive = true;
+                                endingTimer = 2.7;
                             }
                             else { e.dt = 0.5; e.vy = -8; }
                         }
@@ -574,10 +569,9 @@
                     endingTimer -= dt;
                     if (endingTimer <= 0) {
                         endingFade += dt * 0.7;
-                        if (endingFade >= 1) {
-                            endingFade = 1;
-                        }
+                        if (endingFade >= 1) endingFade = 1;
                     }
+                }
                 
                 cameraX = hero.x - W/2;
                 if (cameraX < 0) cameraX = 0;
@@ -648,7 +642,7 @@
                 bullets = []; ebullets = []; enemies = mkEnemies();
                 dialogAct = false; dialogSt = DIALOG_NONE; dialogComp = false;
                 hero.ua = false; hero.uph = 0; hero.ur = false; hero.rh = 0; dissShow = false;
-                endingActive = false; endingTimer = 0; endingFade = 0;
+                simakDied = false; endingActive = false; endingTimer = 2.7; endingFade = 0;
             }
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
         });
@@ -675,7 +669,7 @@
                     bullets = []; ebullets = []; enemies = mkEnemies();
                     dialogAct = false; dialogSt = DIALOG_NONE; dialogComp = false;
                     hero.ua = false; hero.uph = 0; hero.ur = false; hero.rh = 0; dissShow = false;
-                    endingActive = false; endingTimer = 0; endingFade = 0;
+                    simakDied = false; endingActive = false; endingTimer = 2.7; endingFade = 0;
                 }
             });
             btn.addEventListener('pointerup', (e) => { e.preventDefault(); keys[code] = false; });
