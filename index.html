@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>LEG FINDER SIMULATOR</title>
+    <title>ОДНА НОГА ЗДЕСЬ v. 1.1</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -166,6 +166,7 @@
         let gamePaused = false;
         let startPulse = 0;
         let startPulseDir = 1;
+        let pulseRAF = null;
         
         const keys = {};
         let kp = {};
@@ -182,9 +183,10 @@
             for(const o of[0,70]) r.push({t:"judge3",x:1600+o,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:1,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
             for(const o of[140,210]) r.push({t:"judge2",x:1600+o,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
             r.push({t:"judge1",x:1880,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:370,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"ranged",sc:0,sh:false});
-            for(let i=0;i<6;i++){const x=2100+Math.random()*3100;r.push({t:"judge3",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:1,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});}
-            for(let i=0;i<5;i++){const x=2100+Math.random()*3100;r.push({t:"judge2",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});}
-            for(let i=0;i<3;i++){const x=2100+Math.random()*3100;r.push({t:"judge1",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:370,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"ranged",sc:0,sh:false});}
+            // +20%: было 6,5,3 -> стало 8,6,4
+            for(let i=0;i<8;i++){const x=2100+Math.random()*3100;r.push({t:"judge3",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:1,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});}
+            for(let i=0;i<6;i++){const x=2100+Math.random()*3100;r.push({t:"judge2",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});}
+            for(let i=0;i<4;i++){const x=2100+Math.random()*3100;r.push({t:"judge1",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:370,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"ranged",sc:0,sh:false});}
             return r;
         }
         enemies = mkEnemies();
@@ -430,6 +432,7 @@
                     if (m) hero.wt += dt; else { hero.wt = 0; hero.wf = 0; }
                     if (hero.wt > 0.15) { hero.wt = 0; hero.wf = 1 - hero.wf; }
                     if (kp['Space'] && hero.onGround) { hero.vy = hero.jp; hero.onGround = false; kp['Space'] = false; }
+                    else { kp['Space'] = false; }
                     hero.vy += GRAV; hero.y += hero.vy;
                     if (hero.y >= GROUND) { hero.y = GROUND; hero.vy = 0; hero.onGround = true; }
                     if (hero.x < 0) hero.x = 0; if (hero.x > WORLD_W - 100) hero.x = WORLD_W - 100;
@@ -450,11 +453,11 @@
                                 break;
                             }
                         }
-                    }
+                    } else { kp['KeyF'] = false; }
                     if (kp['KeyG'] && hero.rc <= 0) {
                         hero.rc = 0.5; hero.isDiss = true; hero.at = 0.3; hero.dyoff = -25; kp['KeyG'] = false;
                         bullets.push({x: hero.x + (hero.fr ? 40 : -40), y: hero.y + 40, dir: hero.fr ? 1 : -1, dist: 0});
-                    }
+                    } else { kp['KeyG'] = false; }
                 }
                 
                 if (hero.at > 0) hero.at -= dt; else { hero.isAtt = false; hero.isDiss = false; hero.dyoff = 0; }
@@ -583,25 +586,28 @@
             for (const k in kp) kp[k] = false;
         }
 
-        function loop(ts) {
-            if (!gameStarted) {
-                startPulse += 0.05 * startPulseDir;
-                if (startPulse > 25) startPulseDir = -1;
-                if (startPulse < -25) startPulseDir = 1;
-                const startImg = document.getElementById('start-img');
-                if (startImg) {
-                    startImg.style.width = (60 + startPulse * 0.6) + '%';
-                    startImg.style.height = 'auto';
-                }
-                requestAnimationFrame(loop);
-                return;
-            }
+        function gameLoop(ts) {
             if (lastTime === 0) lastTime = ts;
             const dt = Math.min((ts - lastTime) / 1000, 0.1);
             lastTime = ts;
             update(dt);
             render();
-            requestAnimationFrame(loop);
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startPulseLoop() {
+            startPulse += 0.05 * startPulseDir;
+            if (startPulse > 25) startPulseDir = -1;
+            if (startPulse < -25) startPulseDir = 1;
+            const startImg = document.getElementById('start-img');
+            if (startImg && !gameStarted) {
+                const base = Math.min(window.innerWidth, window.innerHeight) * 0.6;
+                const w = base + startPulse * 3;
+                const h = w * 0.5;
+                startImg.style.width = w + 'px';
+                startImg.style.height = h + 'px';
+                pulseRAF = requestAnimationFrame(startPulseLoop);
+            }
         }
 
         // ============================================================
@@ -611,7 +617,8 @@
             document.getElementById('ui-overlay').style.display = 'none';
             gameStarted = true;
             lastTime = 0;
-            requestAnimationFrame(loop);
+            if (pulseRAF) cancelAnimationFrame(pulseRAF);
+            requestAnimationFrame(gameLoop);
         });
 
         window.addEventListener('keydown', (e) => {
@@ -683,7 +690,9 @@
         stb('btn-interact', 'KeyE');
         stb('btn-restart', 'KeyR');
 
-        loadAll();
+        loadAll().then(() => {
+            pulseRAF = requestAnimationFrame(startPulseLoop);
+        });
     </script>
 </body>
 </html>
