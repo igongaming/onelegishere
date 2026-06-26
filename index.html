@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>ОДНА НОГА ЗДЕСЬ v. 1.1</title>
+    <title>LEG FINDER SIMULATOR</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -183,7 +183,6 @@
             for(const o of[0,70]) r.push({t:"judge3",x:1600+o,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:1,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
             for(const o of[140,210]) r.push({t:"judge2",x:1600+o,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
             r.push({t:"judge1",x:1880,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:370,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"ranged",sc:0,sh:false});
-            // +20%: было 6,5,3 -> стало 8,6,4
             for(let i=0;i<8;i++){const x=2100+Math.random()*3100;r.push({t:"judge3",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:1,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});}
             for(let i=0;i<6;i++){const x=2100+Math.random()*3100;r.push({t:"judge2",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});}
             for(let i=0;i<4;i++){const x=2100+Math.random()*3100;r.push({t:"judge1",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:370,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"ranged",sc:0,sh:false});}
@@ -306,7 +305,12 @@
                     const bx = i * 800 - cameraX;
                     if (bx + 800 > 0 && bx < W && bgImgs[i]) ctx.drawImage(bgImgs[i], bx, 0, 800, 600);
                 }
-                for (const e of enemies) { if (!e.alive) continue; drawSpr(getEspr(e), e.x - cameraX, e.y, 135, 180, true); }
+                // Враги: simak отзеркаливается, judge всегда без отражения
+                for (const e of enemies) { 
+                    if (!e.alive) continue; 
+                    const fr = (e.t === "simak") ? e.fr : true;
+                    drawSpr(getEspr(e), e.x - cameraX, e.y, 135, 180, fr); 
+                }
                 for (const b of ebullets) drawImg('bullet', b.x - cameraX - 12, b.y - 12, 25, 25);
                 
                 let hs = "hero_stand";
@@ -531,13 +535,15 @@
                                 if (e.sh || adx < e.ar) {
                                     e.st = "chase";
                                     if (e.atyp === "ranged") {
-                                        if (dx > 200) e.x += e.sp; else if (dx < -200) e.x -= e.sp;
+                                        if (dx > 200) { e.x += e.sp; e.fr = true; }
+                                        else if (dx < -200) { e.x -= e.sp; e.fr = false; }
                                         if (e.sc <= 0 && adx < 400) {
                                             e.sc = 1.2; e.hc = 0.5;
                                             ebullets.push({x: e.x, y: e.y + 80, dir: hero.x > e.x ? 1 : -1, speed: 5, dist: 0, maxDist: 500, dmg: e.dmg});
                                         }
                                     } else {
-                                        if (dx > 15) e.x += e.sp; else if (dx < -15) e.x -= e.sp;
+                                        if (dx > 15) { e.x += e.sp; e.fr = true; }
+                                        else if (dx < -15) { e.x -= e.sp; e.fr = false; }
                                     }
                                 }
                             }
@@ -601,7 +607,6 @@
             if (startPulse < -15) startPulseDir = 1;
             const startImg = document.getElementById('start-img');
             if (startImg && !gameStarted) {
-                const base = Math.min(window.innerWidth, window.innerHeight) * 0.6;
                 const scale = 1 + startPulse / 100;
                 startImg.style.transform = 'scale(' + scale + ')';
                 startImg.style.width = 'auto';
