@@ -31,13 +31,13 @@
         }
         .btn:active { background: rgba(255,255,255,0.3); }
         .btn-small { width: 45px; height: 45px; font-size: 16px; }
-        #startScreen {
+        #ui-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: #000; display: flex; align-items: center; justify-content: center;
-            z-index: 100; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            z-index: 100; cursor: pointer; background: #000;
         }
-        #startScreen img { max-width: 80%; max-height: 80%; }
-        #loading {
+        #ui-overlay img { max-width: 80%; max-height: 80%; }
+        #loading-text {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: #fff; font-family: Arial; font-size: 24px; z-index: 200;
         }
@@ -46,9 +46,9 @@
 </head>
 <body>
     <canvas id="game"></canvas>
-    <div id="loading">Загрузка...</div>
-    <div id="startScreen" style="display:none;">
-        <img src="10diss.png" alt="Начать игру" id="startImg">
+    <div id="loading-text">Загрузка... 0%</div>
+    <div id="ui-overlay" style="display:none;">
+        <img src="10diss.png" alt="Начать игру" id="start-img">
     </div>
     <div id="controls">
         <button class="btn" id="btn-left">◀</button>
@@ -61,25 +61,30 @@
     </div>
 
     <script>
+        // ============================================================
+        // КАНВАС
+        // ============================================================
         const canvas = document.getElementById('game');
         const ctx = canvas.getContext('2d');
-        const GAME_WIDTH = 800;
-        const GAME_HEIGHT = 600;
-        let scale = 1;
-
+        const W = 800, H = 600;
+        
         function resize() {
-            scale = Math.min(window.innerWidth / GAME_WIDTH, window.innerHeight / GAME_HEIGHT);
-            canvas.width = GAME_WIDTH * scale;
-            canvas.height = GAME_HEIGHT * scale;
+            const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+            canvas.width = W * s;
+            canvas.height = H * s;
             ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.scale(scale, scale);
+            ctx.scale(s, s);
         }
         window.addEventListener('resize', resize);
         resize();
 
+        // ============================================================
+        // ЗАГРУЗКА
+        // ============================================================
         const imgs = {};
-        const bgImgs = [];
-        const names = [
+        const bgImgs = new Array(10).fill(null);
+        
+        const IMG_NAMES = [
             'bg_start','babka','portal',
             'hero_stand','hero_walk1','hero_walk2','hero_jump','hero_hitting','hero_diss',
             'hero_ult_1','hero_ult_2','hero_ult_3',
@@ -88,260 +93,525 @@
             'judge1_idle','judge1_hit','judge2_idle','judge2_hit','judge3_idle','judge3_hit',
             'hero_hp_1','hero_hp_2','hero_hp_3','hero_hp_4','hero_hp_5'
         ];
-        const allNames = [...names];
+        
+        const allNames = [...IMG_NAMES];
         for (let i = 1; i <= 10; i++) allNames.push('bg_' + i);
-
+        
         let total = allNames.length;
-        let done = 0;
-
-        function loadOne(name) {
+        let loaded = 0;
+        
+        function loadImage(name) {
             return new Promise(resolve => {
                 const img = new Image();
-                img.onload = () => { done++; updateLoading(); resolve(img); };
-                img.onerror = () => { done++; updateLoading(); resolve(null); };
+                img.onload = () => { loaded++; updateLoading(); resolve(img); };
+                img.onerror = () => { 
+                    console.error('Ошибка загрузки: ' + name + '.png');
+                    loaded++; 
+                    updateLoading(); 
+                    resolve(null); 
+                };
                 img.src = name + '.png';
             });
         }
-
+        
         function updateLoading() {
-            const pct = Math.floor(done / total * 100);
-            document.getElementById('loading').textContent = 'Загрузка... ' + pct + '%';
+            document.getElementById('loading-text').textContent = 'Загрузка... ' + Math.floor(loaded / total * 100) + '%';
         }
-
+        
         async function loadAll() {
             const tasks = [];
-            for (const name of names) {
-                tasks.push(loadOne(name).then(img => { imgs[name] = img; }));
+            for (const name of IMG_NAMES) {
+                tasks.push(loadImage(name).then(img => { imgs[name] = img; }));
             }
             for (let i = 1; i <= 10; i++) {
-                tasks.push(loadOne('bg_' + i).then(img => { bgImgs.push(img); }));
+                tasks.push(loadImage('bg_' + i).then(img => { bgImgs[i-1] = img; }));
             }
             await Promise.all(tasks);
-            document.getElementById('loading').style.display = 'none';
-            document.getElementById('startScreen').style.display = 'flex';
+            document.getElementById('loading-text').style.display = 'none';
+            document.getElementById('ui-overlay').style.display = 'flex';
         }
 
-        document.getElementById('startScreen').addEventListener('click', () => {
-            document.getElementById('startScreen').style.display = 'none';
-            lastTime = performance.now();
-            requestAnimationFrame(loop);
-        });
+        // ============================================================
+        // СОСТОЯНИЯ
+        // ============================================================
+        const ST_START = 0, ST_LEVEL1 = 1;
+        let gameState = ST_START;
+        const DIALOG_NONE = 0, DIALOG_REPLICA = 1, DIALOG_CHOICES = 2;
+        const WORLD_W = 8000, GROUND = 450, GRAV = 0.8;
 
-        const STATE_START = "start", STATE_LEVEL1 = "level1";
-        let gameState = STATE_START;
-        const DIALOG_NONE = 0, DIALOG_PRESS_E = 1, DIALOG_CHOICES = 2;
-        const WORLD_WIDTH = 8000, GROUND_Y = 450, GRAVITY = 0.8;
-        let cameraX = 0;
-
+        // Герой
         let hero = {
-            x:50,y:GROUND_Y-140,vy:0,speed:5,jumpPower:-22,onGround:false,facingRight:true,
-            hp:50,maxHp:50,hitCooldown:0,alive:true,meleeBonus:0,
-            walkTimer:0,walkFrame:0,attackTimer:0,isAttacking:false,isDissing:false,dissYOffset:0,
-            rangeCooldown:0,rangedHits:0,rangedHitsNeeded:10,ultReady:false,ultActive:false,ultPhase:0,ultTimer:0,ultOverlayTimer:0
+            x:50, y:GROUND-140, vy:0, speed:5, jp:-22, onGround:false, fr:true,
+            hp:50, maxHp:50, hc:0, alive:true, mb:0,
+            wt:0, wf:0, at:0, isAtt:false, isDiss:false, dyoff:0,
+            rc:0, rh:0, rhn:10, ur:false, ua:false, uph:0, ut:0, uot:0
         };
-        let bullets=[], enemyBullets=[], enemies=[];
-        let dialogState=DIALOG_NONE,dialogActive=false,dialogComplete=false,dialogReplica="",dialogChoices=[],dialogNext=null;
-        let dissShow=false,dissTimer=0;
-        let babkaVisible=false,babkaTextFull="Am I glad to see you! The LEG...and I...and, well, everybody...we're all trapped inside the castle walls. Короче, Меченый, иди и ищи свою ногу. А то пока что НЕНАХОД.";
-        let babkaTextDisplayed="",babkaTextIndex=0,babkaTextTimer=0,babkaTextSpeed=0.03,babkaTextDone=false;
-        let portalVisible=false,portalX=650,portalY=GROUND_Y-25,heroEnteringPortal=false,heroPortalTimer=0;
-        let levelTitle="",levelTitleTimer=0;
-        const keys={}, keyJustPressed={};
+        
+        let bullets = [], ebullets = [], enemies = [];
+        let dialogSt = DIALOG_NONE, dialogAct = false, dialogComp = false;
+        let dialogRep = "", dialogCh = [], dialogNxt = null;
+        let dissShow = false, dissTimer = 0;
+        
+        // Старт
+        let bv = false, btFull = "Am I glad to see you! The LEG...and I...and, well, everybody...we're all trapped inside the castle walls. Короче, Меченый, иди и ищи свою ногу. А то пока что НЕНАХОД.";
+        let btDisp = "", btIdx = 0, btTimer = 0, btSpeed = 0.03, btDone = false;
+        let pv = false, px = 650, py = GROUND-25, hep = false, hpt = 0;
+        let lvlTitle = "", lvlTitleTimer = 0;
+        let cameraX = 0;
+        let gameStarted = false;
+        
+        const keys = {}, kp = {};
 
-        function createEnemies(){
-            const r=[];
-            r.push({type:"simak",x:5700,y:GROUND_Y-30,hp:30,maxHp:30,speed:3,damage:1,facingRight:false,aggroRange:250,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"melee",shootCooldown:0,seenHero:false});
-            r.push({type:"judge3",x:700,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:1,facingRight:true,aggroRange:320,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"melee",shootCooldown:0,seenHero:false});
-            for(const o of[0,60,120]) r.push({type:"judge3",x:1100+o,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:1,facingRight:true,aggroRange:320,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"melee",shootCooldown:0,seenHero:false});
-            r.push({type:"judge2",x:1280,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:2,facingRight:true,aggroRange:320,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"melee",shootCooldown:0,seenHero:false});
-            for(const o of[0,70]) r.push({type:"judge3",x:1600+o,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:1,facingRight:true,aggroRange:320,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"melee",shootCooldown:0,seenHero:false});
-            for(const o of[140,210]) r.push({type:"judge2",x:1600+o,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:2,facingRight:true,aggroRange:320,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"melee",shootCooldown:0,seenHero:false});
-            r.push({type:"judge1",x:1880,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:2,facingRight:true,aggroRange:370,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"ranged",shootCooldown:0,seenHero:false});
-            for(let i=0;i<6;i++){const x=2100+Math.random()*3100;r.push({type:"judge3",x,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:1,facingRight:true,aggroRange:320,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"melee",shootCooldown:0,seenHero:false});}
-            for(let i=0;i<5;i++){const x=2100+Math.random()*3100;r.push({type:"judge2",x,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:2,facingRight:true,aggroRange:320,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"melee",shootCooldown:0,seenHero:false});}
-            for(let i=0;i<3;i++){const x=2100+Math.random()*3100;r.push({type:"judge1",x,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:2,facingRight:true,aggroRange:370,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:"ranged",shootCooldown:0,seenHero:false});}
+        // ============================================================
+        // ВРАГИ
+        // ============================================================
+        function mkEnemies() {
+            const r = [];
+            r.push({t:"simak",x:5700,y:GROUND-30,hp:30,maxHp:30,sp:3,dmg:1,fr:false,ar:250,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
+            r.push({t:"judge3",x:700,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:1,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
+            for(const o of[0,60,120]) r.push({t:"judge3",x:1100+o,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:1,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
+            r.push({t:"judge2",x:1280,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
+            for(const o of[0,70]) r.push({t:"judge3",x:1600+o,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:1,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
+            for(const o of[140,210]) r.push({t:"judge2",x:1600+o,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});
+            r.push({t:"judge1",x:1880,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:370,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"ranged",sc:0,sh:false});
+            for(let i=0;i<6;i++){const x=2100+Math.random()*3100;r.push({t:"judge3",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:1,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});}
+            for(let i=0;i<5;i++){const x=2100+Math.random()*3100;r.push({t:"judge2",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:320,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"melee",sc:0,sh:false});}
+            for(let i=0;i<3;i++){const x=2100+Math.random()*3100;r.push({t:"judge1",x,y:GROUND-30,hp:4,maxHp:4,sp:2,dmg:2,fr:true,ar:370,hc:0,wt:0,wf:0,alive:true,ht:0,st:"idle",dt:0,vy:0,atyp:"ranged",sc:0,sh:false});}
             return r;
         }
-        enemies=createEnemies();
+        enemies = mkEnemies();
 
-        function dr(text,next){dialogState=DIALOG_PRESS_E;dialogReplica=text;dialogNext=next;}
-        function dc(choices,next){dialogState=DIALOG_CHOICES;dialogChoices=choices;dialogNext=next;}
-        function de(){dialogState=DIALOG_NONE;dialogActive=false;dialogComplete=true;}
-        function hh(d){hero.hp-=d;if(hero.hp<=0)hero.hp=1;de();}
-        function bs(){for(const e of enemies)if(e.type==="simak"&&e.alive){e.hp+=20;e.maxHp+=20;e.damage+=1;}de();}
-        function ks(){for(const e of enemies)if(e.type==="simak"&&e.alive){e.hp=0;e.state="dead";e.y=GROUND_Y+15;}de();}
-        function sj(c,t){let sx=5700;for(const e of enemies)if(e.type==="simak"){sx=e.x;break;}for(let i=0;i<c;i++){enemies.push({type:t,x:sx+150+i*80,y:GROUND_Y-30,hp:4,maxHp:4,speed:2,damage:t==="judge1"?2:(t==="judge2"?2:1),facingRight:true,aggroRange:t==="judge1"?370:320,hitCooldown:0,walkTimer:0,walkFrame:0,alive:true,hurtTimer:0,state:"idle",deathTimer:0,vy:0,attackType:t==="judge1"?"ranged":"melee",shootCooldown:0,seenHero:true});}de();}
-        function bb(){hero.hp+=5;hero.meleeBonus+=2;for(const e of enemies)if(e.type==="simak"&&e.alive){e.hp+=5;e.maxHp+=5;e.damage+=2;}de();}
-        function h1(){dr("Караван идет",()=>de());}
-        function h2(){dr("Я не согласовывал этот дисс.",()=>{dc(["У меня есть скрин переписки.","Когда у тебя днюха?","Иван Симак."],(c)=>{if(c===0)dr("Это ничего не значит. Желтая карточка тебе",()=>hh(3));else if(c===1)dr("Я не буду это комментировать. Ты все равно проиграешь",()=>de());else dr("Я ТЕБЕ СКАЗАЛ, ЧТО НЕ СОГЛАСОВЫВАЛ ЭТОТ ДИСС!",()=>{dc(["Иван Симак.","Да пох. 10 диссов.","Fuck"],(c2)=>{if(c2===0)dr("Ну все, пойдем выскочим на разах!",()=>bs());else if(c2===1){dissShow=true;dissTimer=1.0;dr("ЭТО НЕ ПО ПРАВИЛАМ! КРАСНАЯ КАРТОЧКА!",()=>sj(5,"judge1"));}else dr("Мне это надоело",()=>ks());});});});});}
-        function h3(){dr("Какую ногу?!",()=>{dc(["Принцессу Ногу...","Ладно. А альбом Стива не видел?","ГДЕ НОГА?!"],(c)=>{if(c===0)dr("Тут нет никакого замка. Тут ХРАМ ПОЭЗИИ, а не НОГИНСК!",()=>sj(5,"judge3"));else if(c===1)dr("Я его забрал. Но ты его получишь только через мой труп",()=>de());else dr("ША ТУ НЫ",()=>bb());});});}
+        // ============================================================
+        // ДИАЛОГ
+        // ============================================================
+        function drp(text, next) { dialogSt = DIALOG_REPLICA; dialogRep = text; dialogNxt = next; }
+        function dch(choices, next) { dialogSt = DIALOG_CHOICES; dialogCh = choices; dialogNxt = next; }
+        function dend() { dialogSt = DIALOG_NONE; dialogAct = false; dialogComp = true; }
+        function hhd(d) { hero.hp -= d; if (hero.hp <= 0) hero.hp = 1; dend(); }
+        function bsim() { for (const e of enemies) if (e.t === "simak" && e.alive) { e.hp += 20; e.maxHp += 20; e.dmg += 1; } dend(); }
+        function ksim() { for (const e of enemies) if (e.t === "simak" && e.alive) { e.hp = 0; e.st = "dead"; e.y = GROUND + 15; } dend(); }
+        function spj(c, t) { let sx = 5700; for (const e of enemies) if (e.t === "simak") { sx = e.x; break; } for (let i = 0; i < c; i++) { enemies.push({ t, x: sx + 150 + i * 80, y: GROUND - 30, hp: 4, maxHp: 4, sp: 2, dmg: t === "judge1" ? 2 : (t === "judge2" ? 2 : 1), fr: true, ar: t === "judge1" ? 370 : 320, hc: 0, wt: 0, wf: 0, alive: true, ht: 0, st: "idle", dt: 0, vy: 0, atyp: t === "judge1" ? "ranged" : "melee", sc: 0, sh: true }); } dend(); }
+        function bboth() { hero.hp += 5; hero.mb += 2; for (const e of enemies) if (e.t === "simak" && e.alive) { e.hp += 5; e.maxHp += 5; e.dmg += 2; } dend(); }
+        
+        function h1() { drp("Караван идет", () => dend()); }
+        function h2() {
+            drp("Я не согласовывал этот дисс.", () => {
+                dch(["У меня есть скрин переписки.", "Когда у тебя днюха?", "Иван Симак."], (c) => {
+                    if (c === 0) drp("Это ничего не значит. Желтая карточка тебе", () => hhd(3));
+                    else if (c === 1) drp("Я не буду это комментировать. Ты все равно проиграешь", () => dend());
+                    else drp("Я ТЕБЕ СКАЗАЛ, ЧТО НЕ СОГЛАСОВЫВАЛ ЭТОТ ДИСС!", () => {
+                        dch(["Иван Симак.", "Да пох. 10 диссов.", "Fuck"], (c2) => {
+                            if (c2 === 0) drp("Ну все, пойдем выскочим на разах!", () => bsim());
+                            else if (c2 === 1) { dissShow = true; dissTimer = 1.0; drp("ЭТО НЕ ПО ПРАВИЛАМ! КРАСНАЯ КАРТОЧКА!", () => spj(5, "judge1")); }
+                            else drp("Мне это надоело", () => ksim());
+                        });
+                    });
+                });
+            });
+        }
+        function h3() {
+            drp("Какую ногу?!", () => {
+                dch(["Принцессу Ногу...", "Ладно. А альбом Стива не видел?", "ГДЕ НОГА?!"], (c) => {
+                    if (c === 0) drp("Тут нет никакого замка. Тут ХРАМ ПОЭЗИИ, а не НОГИНСК!", () => spj(5, "judge3"));
+                    else if (c === 1) drp("Я его забрал. Но ты его получишь только через мой труп", () => dend());
+                    else drp("ША ТУ НЫ", () => bboth());
+                });
+            });
+        }
 
-        function dspr(name,x,y,w,h,fr){
-            const img=imgs[name];
-            if(!img)return;
+        // ============================================================
+        // ОТРИСОВКА
+        // ============================================================
+        function drawSpr(name, x, y, w, h, fr) {
+            const img = imgs[name];
+            if (!img) return;
             ctx.save();
-            if(!fr){ctx.translate(x+w,y);ctx.scale(-1,1);ctx.drawImage(img,0,0,w,h);}
-            else ctx.drawImage(img,x,y,w,h);
+            if (!fr) { ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(img, 0, 0, w, h); }
+            else ctx.drawImage(img, x, y, w, h);
             ctx.restore();
         }
-        function dimg(name,x,y,w,h){
-            const img=imgs[name];
-            if(!img)return;
-            if(w&&h)ctx.drawImage(img,x,y,w,h);
-            else ctx.drawImage(img,x,y);
+        function drawImg(name, x, y, w, h) {
+            const img = imgs[name];
+            if (!img) return;
+            if (w && h) ctx.drawImage(img, x, y, w, h);
+            else ctx.drawImage(img, x, y);
         }
-        function ges(enemy){
-            if(enemy.state==="dead")return enemy.type+"_idle";
-            if(enemy.hurtTimer>0)return enemy.type+"_hurt";
-            if(enemy.state==="chase"&&enemy.hitCooldown>0)return enemy.type+"_hitting";
-            if(enemy.state==="chase"&&Math.abs(hero.x-enemy.x)>15)return enemy.type+"_walk"+((enemy.walkFrame||0)===0?"1":"2");
-            return enemy.type+"_idle";
-        }
-
-        function render(){
-            ctx.fillStyle="#000";ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);
-            if(gameState===STATE_START){
-                dimg('bg_start',0,0,800,600);
-                if(babkaVisible){
-                    dimg('babka',50,GAME_HEIGHT/2-50,100,100);
-                    ctx.fillStyle="#000";ctx.fillRect(170,GAME_HEIGHT/2-60,580,120);
-                    ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.strokeRect(170,GAME_HEIGHT/2-60,580,120);
-                    ctx.fillStyle="#fff";ctx.font="18px Arial";
-                    const words=babkaTextDisplayed.split(" ");const lines=[];let line="";
-                    for(const w of words){const test=line+(line?" ":"")+w;if(ctx.measureText(test).width<560)line=test;else{lines.push(line);line=w;}}
-                    if(line)lines.push(line);
-                    for(let i=0;i<lines.length;i++)ctx.fillText(lines[i],185,GAME_HEIGHT/2-50+i*22);
-                    if(babkaTextDone){ctx.fillStyle="#969696";ctx.fillText("Нажми E",650,GAME_HEIGHT/2+35);}
-                }
-                if(portalVisible)dimg('portal',portalX,portalY,80,120);
-                let sn=heroEnteringPortal?"hero_jump":(hero.walkTimer>0?"hero_walk"+(hero.walkFrame===0?"1":"2"):"hero_stand");
-                dspr(sn,hero.x,hero.y,100,140,hero.facingRight);
-            }else if(gameState===STATE_LEVEL1){
-                for(let i=0;i<bgImgs.length;i++){
-                    const bx=i*800-cameraX;
-                    if(bx+800>0&&bx<GAME_WIDTH&&bgImgs[i])ctx.drawImage(bgImgs[i],bx,0,800,600);
-                }
-                for(const e of enemies){if(!e.alive)continue;dspr(ges(e),e.x-cameraX,e.y,135,180,e.facingRight);}
-                for(const b of enemyBullets)dimg('bullet',b.x-cameraX-12,b.y-12,25,25);
-
-                let hs="hero_stand";
-                if(!hero.alive)hs="hero_jump";
-                else if(hero.ultActive)hs="hero_ult_"+hero.ultPhase;
-                else if(hero.isDissing)hs="hero_diss";
-                else if(hero.isAttacking)hs="hero_hitting";
-                else if(!hero.onGround)hs="hero_jump";
-                else if(hero.walkTimer>0)hs="hero_walk"+(hero.walkFrame===0?"1":"2");
-                const hx=hero.x-cameraX,hy=hero.y+hero.dissYOffset;
-                const hw=hs.includes("diss")?140:100,hh=hs.includes("diss")?150:140;
-                dspr(hs,hx,hy,hw,hh,hero.facingRight);
-
-                for(const b of bullets)dimg('bullet',b.x-cameraX-17,b.y-17,35,35);
-                if(hero.ultReady)dimg('10diss',hx+25,hy-30,50,25);
-                if(hero.ultActive&&hero.ultPhase===3&&hero.ultOverlayTimer>0){
-                    ctx.fillStyle="rgba(0,0,0,0.7)";ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);
-                    dimg('10diss',GAME_WIDTH/2-175,GAME_HEIGHT/2-87,350,175);
-                }
-                if(dissShow)dimg('10diss',GAME_WIDTH/2-150,GAME_HEIGHT/2-75,300,150);
-
-                const hpP=hero.hp/hero.maxHp;
-                let hpI=hpP>0.8?0:hpP>0.5?1:hpP>0.25?2:hpP>0?3:4;
-                dimg('hero_hp_'+(hpI+1),10,10,200,40);
-
-                if(!hero.alive){
-                    ctx.fillStyle="rgba(0,0,0,0.6)";ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);
-                    ctx.fillStyle="#f00";ctx.font="48px Arial";ctx.fillText("GAME OVER",GAME_WIDTH/2-120,GAME_HEIGHT/2-20);
-                    ctx.fillStyle="#fff";ctx.font="18px Arial";ctx.fillText("R — попробовать еще раз",GAME_WIDTH/2-100,GAME_HEIGHT/2+20);
-                }
-                if(dialogState!==DIALOG_NONE){
-                    ctx.fillStyle="rgba(0,0,0,0.8)";ctx.fillRect(50,GAME_HEIGHT-180,GAME_WIDTH-100,140);
-                    ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.strokeRect(50,GAME_HEIGHT-180,GAME_WIDTH-100,140);
-                    ctx.fillStyle="#fff";ctx.font="18px Arial";
-                    if(dialogState===DIALOG_PRESS_E){ctx.fillText(dialogReplica,70,GAME_HEIGHT-150);ctx.fillStyle="#969696";ctx.fillText("Нажми E чтобы продолжить",70,GAME_HEIGHT-110);}
-                    else if(dialogState===DIALOG_CHOICES){ctx.fillText("Твой ответ:",70,GAME_HEIGHT-150);for(let i=0;i<dialogChoices.length;i++){ctx.fillStyle="#ff0";ctx.fillText((i+1)+". "+dialogChoices[i],90,GAME_HEIGHT-120+i*25);}}
-                }
+        function getEspr(e) {
+            if (e.st === "dead") {
+                if (e.t === "simak") return "simak_dead";
+                return e.t + "_idle";
             }
-            if(levelTitleTimer>0){ctx.fillStyle="#ff0";ctx.font="48px Arial";ctx.fillText(levelTitle,GAME_WIDTH/2-ctx.measureText(levelTitle).width/2,GAME_HEIGHT/2-30);}
+            if (e.ht > 0) return e.t + "_hurt";
+            if (e.st === "chase" && e.hc > 0) return e.t + "_hitting";
+            if (e.st === "chase" && Math.abs(hero.x - e.x) > 15) {
+                e.wt = (e.wt || 0) + 0.016;
+                if (e.wt > 0.2) { e.wt = 0; e.wf = 1 - (e.wf || 0); }
+                return e.t + "_walk" + ((e.wf || 0) === 0 ? "1" : "2");
+            }
+            return e.t + "_idle";
         }
 
-        let lastTime=performance.now();
-        let gameStarted = false;
-
-        function update(dt){
-            if(dt>0.1)dt=0.1;
-            if(!gameStarted) return;
+        function render() {
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, W, H);
             
-            if(gameState===STATE_START){
-                if(keys['ArrowLeft']||keys['KeyA']){hero.x-=hero.speed;hero.facingRight=false;hero.walkTimer+=dt;}
-                else if(keys['ArrowRight']||keys['KeyD']){hero.x+=hero.speed;hero.facingRight=true;hero.walkTimer+=dt;}
-                else{hero.walkTimer=0;hero.walkFrame=0;}
-                if(hero.walkTimer>0.15){hero.walkTimer=0;hero.walkFrame=1-hero.walkFrame;}
-                if(hero.x<0)hero.x=0;if(hero.x>700)hero.x=700;hero.y=GROUND_Y-30;
-                if(!babkaVisible&&hero.x>300)babkaVisible=true;
-                if(babkaVisible&&!babkaTextDone){babkaTextTimer+=dt;while(babkaTextTimer>=babkaTextSpeed&&babkaTextIndex<babkaTextFull.length){babkaTextDisplayed+=babkaTextFull[babkaTextIndex];babkaTextIndex++;babkaTextTimer-=babkaTextSpeed;}if(babkaTextIndex>=babkaTextFull.length)babkaTextDone=true;}
-                if(babkaTextDone&&keyJustPressed['KeyE'])portalVisible=true;
-                if(portalVisible&&!heroEnteringPortal&&hero.x>portalX-30){heroEnteringPortal=true;heroPortalTimer=1.0;}
-                if(heroEnteringPortal){heroPortalTimer-=dt;hero.x=portalX;if(heroPortalTimer<=0){gameState=STATE_LEVEL1;levelTitle="ПЕРВЫЙ УРОВЕНЬ";levelTitleTimer=2.0;hero.x=50;hero.y=GROUND_Y-140;hero.vy=0;hero.alive=true;hero.hp=50;hero.hitCooldown=0;hero.onGround=false;hero.meleeBonus=0;cameraX=0;bullets=[];enemyBullets=[];hero.rangedHits=0;hero.ultReady=false;hero.ultActive=false;}}
-            }else if(gameState===STATE_LEVEL1){
-                if(!hero.ultActive&&!dialogActive&&hero.alive){
-                    let m=false;
-                    if(keys['ArrowLeft']||keys['KeyA']){hero.x-=hero.speed;hero.facingRight=false;m=true;}
-                    if(keys['ArrowRight']||keys['KeyD']){hero.x+=hero.speed;hero.facingRight=true;m=true;}
-                    if(m)hero.walkTimer+=dt;else{hero.walkTimer=0;hero.walkFrame=0;}
-                    if(hero.walkTimer>0.15){hero.walkTimer=0;hero.walkFrame=1-hero.walkFrame;}
-                    if((keys['Space']||keyJustPressed['Space'])&&hero.onGround){hero.vy=hero.jumpPower;hero.onGround=false;}
-                    hero.vy+=GRAVITY;hero.y+=hero.vy;
-                    if(hero.y>=GROUND_Y){hero.y=GROUND_Y;hero.vy=0;hero.onGround=true;}
-                    if(hero.x<0)hero.x=0;if(hero.x>WORLD_WIDTH-100)hero.x=WORLD_WIDTH-100;
-                    if(hero.hitCooldown>0)hero.hitCooldown-=dt;
-                    if(hero.hp<=0&&hero.alive){hero.alive=false;hero.vy=-10;hero.onGround=false;}
-                    if((keys['KeyF']||keyJustPressed['KeyF'])&&hero.attackTimer<=0){hero.attackTimer=0.3;hero.isAttacking=true;for(const e of enemies){if(e.alive&&Math.abs(hero.x-e.x)<80){if(e.state==="dead"){if(hero.x<e.x)e.x+=200;else e.x-=200;if(e.x<0)e.x=0;if(e.x>WORLD_WIDTH-135)e.x=WORLD_WIDTH-135;}else{if(e.type!=="simak"){e.hp-=(3+hero.meleeBonus);e.hurtTimer=0.3;}if(hero.x<e.x)e.x+=20;else e.x-=20;}break;}}}
-                    if((keys['KeyG']||keyJustPressed['KeyG'])&&hero.rangeCooldown<=0){hero.rangeCooldown=0.5;hero.isDissing=true;hero.attackTimer=0.3;hero.dissYOffset=-25;bullets.push({x:hero.x+(hero.facingRight?40:-40),y:hero.y+40,dir:hero.facingRight?1:-1,dist:0});}
+            if (gameState === ST_START) {
+                drawImg('bg_start', 0, 0, 800, 600);
+                if (bv) {
+                    drawImg('babka', 50, H/2-50, 100, 100);
+                    ctx.fillStyle = "#000"; ctx.fillRect(170, H/2-60, 580, 120);
+                    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.strokeRect(170, H/2-60, 580, 120);
+                    ctx.fillStyle = "#fff"; ctx.font = "18px Arial";
+                    const words = btDisp.split(" "); const lines = []; let line = "";
+                    for (const w of words) {
+                        const test = line + (line ? " " : "") + w;
+                        if (ctx.measureText(test).width < 560) line = test;
+                        else { lines.push(line); line = w; }
+                    }
+                    if (line) lines.push(line);
+                    for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], 185, H/2-50+i*22);
+                    if (btDone) { ctx.fillStyle = "#969696"; ctx.fillText("Нажми E", 650, H/2+35); }
                 }
-                if(hero.attackTimer>0)hero.attackTimer-=dt;else{hero.isAttacking=false;hero.isDissing=false;hero.dissYOffset=0;}
-                if(hero.rangeCooldown>0)hero.rangeCooldown-=dt;
-                for(let i=bullets.length-1;i>=0;i--){const b=bullets[i];b.x+=8*b.dir;b.dist+=8;let hit=false;for(const e of enemies){if(e.alive&&e.state!=="dead"){if(e.type==="simak"&&!dialogComplete)continue;if(Math.abs(b.x-e.x)<125&&Math.abs(b.y-(e.y+80))<60){e.hp-=1;e.hurtTimer=0.3;hero.rangedHits++;if(hero.rangedHits>=hero.rangedHitsNeeded&&!hero.ultReady)hero.ultReady=true;bullets.splice(i,1);hit=true;break;}}}if(!hit&&b.dist>640)bullets.splice(i,1);}
-                for(let i=enemyBullets.length-1;i>=0;i--){const b=enemyBullets[i];b.x+=b.speed*b.dir;b.dist+=Math.abs(b.speed);let hit=false;if(hero.alive&&hero.onGround&&Math.abs(b.x-hero.x)<40&&Math.abs(b.y-(hero.y+70))<50){let dmg=b.damage;if(hero.ultActive)dmg=Math.max(1,dmg-1);hero.hp-=dmg;hero.hitCooldown=0.5;hit=true;}if(hit||b.dist>b.maxDist)enemyBullets.splice(i,1);}
-                if(hero.ultActive){hero.ultTimer-=dt;if(hero.ultPhase===1&&hero.ultTimer<=0){hero.ultPhase=2;hero.ultTimer=0.45;}else if(hero.ultPhase===2&&hero.ultTimer<=0){hero.ultPhase=3;hero.ultTimer=1.0;hero.ultOverlayTimer=1.0;for(const e of enemies){if(e.alive&&e.state!=="dead"&&Math.abs(hero.x-e.x)<350){e.hp-=8;e.hurtTimer=0.5;}}}else if(hero.ultPhase===3&&hero.ultTimer<=0){hero.ultActive=false;hero.ultPhase=0;}if(hero.ultOverlayTimer>0)hero.ultOverlayTimer-=dt;}
-                if(!dialogActive&&!dialogComplete){for(const e of enemies){if(e.type==="simak"&&e.alive&&e.state!=="dead"&&Math.abs(hero.x-e.x)<100&&hero.onGround){dialogActive=true;dr("Я тебя ждал...",()=>{dr("Ты думал, что пройдёшь в финал КБС?",()=>{dc(["Я люблю акростихи","Иван Симак","Ты не видел мою ногу?"],(c)=>{if(c===0)h1();else if(c===1)h2();else h3();});});});break;}}}
-                if(!dialogActive){for(const e of enemies){if(!e.alive)continue;const dx=hero.x-e.x,adx=Math.abs(dx);if(e.hurtTimer>0)e.hurtTimer-=dt;if(e.hitCooldown>0)e.hitCooldown-=dt;if(e.shootCooldown>0)e.shootCooldown-=dt;if(adx<e.aggroRange)e.seenHero=true;if(e.state==="landing"){e.y+=4;if(e.y>=GROUND_Y-30){e.y=GROUND_Y-30;e.state="chase";}}if(e.state==="chase"||e.state==="idle"){if(e.type!=="simak"||e.state==="chase"||dialogComplete){if(e.seenHero||adx<e.aggroRange){e.state="chase";if(e.attackType==="ranged"){if(dx>200)e.x+=e.speed;else if(dx<-200)e.x-=e.speed;if(e.shootCooldown<=0&&adx<400){e.shootCooldown=1.2;e.hitCooldown=0.5;enemyBullets.push({x:e.x,y:e.y+80,dir:hero.x>e.x?1:-1,speed:5,dist:0,maxDist:500,damage:e.damage});}}else{if(dx>15)e.x+=e.speed;else if(dx<-15)e.x-=e.speed;}}}}if(e.x<0)e.x=0;if(e.x>WORLD_WIDTH-135)e.x=WORLD_WIDTH-135;if(e.attackType==="melee"&&e.state==="chase"&&adx<50&&hero.alive&&hero.onGround&&hero.hitCooldown<=0&&e.hitCooldown<=0){let dmg=e.damage;if(hero.ultActive)dmg=Math.max(1,dmg-1);hero.hp-=dmg;hero.hitCooldown=1.5;e.hitCooldown=0.7;if(hero.x<e.x){hero.x-=40;hero.vy=-8;}else{hero.x+=40;hero.vy=-8;}hero.onGround=false;}if(e.hp<=0&&e.state!=="dead"){e.state="dead";if(e.type==="simak")e.y=GROUND_Y+15;else{e.deathTimer=0.5;e.vy=-8;}}if(e.state==="dead"&&e.type!=="simak"){e.deathTimer-=dt;if(e.deathTimer>0){e.y+=e.vy;e.vy+=GRAVITY;}else{e.y+=15;if(e.y>GAME_HEIGHT+200)e.alive=false;}}}}
-                cameraX=hero.x-GAME_WIDTH/2;if(cameraX<0)cameraX=0;if(cameraX>WORLD_WIDTH-GAME_WIDTH)cameraX=WORLD_WIDTH-GAME_WIDTH;
-                if(dissShow){dissTimer-=dt;if(dissTimer<=0)dissShow=false;}
+                if (pv) drawImg('portal', px, py, 80, 120);
+                let sn = hep ? "hero_jump" : (hero.wt > 0 ? "hero_walk" + (hero.wf === 0 ? "1" : "2") : "hero_stand");
+                drawSpr(sn, hero.x, hero.y, 100, 140, hero.fr);
+            } else if (gameState === ST_LEVEL1) {
+                for (let i = 0; i < bgImgs.length; i++) {
+                    const bx = i * 800 - cameraX;
+                    if (bx + 800 > 0 && bx < W && bgImgs[i]) ctx.drawImage(bgImgs[i], bx, 0, 800, 600);
+                }
+                for (const e of enemies) { if (!e.alive) continue; drawSpr(getEspr(e), e.x - cameraX, e.y, 135, 180, e.fr); }
+                for (const b of ebullets) drawImg('bullet', b.x - cameraX - 12, b.y - 12, 25, 25);
+                
+                let hs = "hero_stand";
+                if (!hero.alive) hs = "hero_jump";
+                else if (hero.ua) hs = "hero_ult_" + hero.uph;
+                else if (hero.isDiss) hs = "hero_diss";
+                else if (hero.isAtt) hs = "hero_hitting";
+                else if (!hero.onGround) hs = "hero_jump";
+                else if (hero.wt > 0) hs = "hero_walk" + (hero.wf === 0 ? "1" : "2");
+                const hx = hero.x - cameraX, hy = hero.y + hero.dyoff;
+                const hw = hs.includes("diss") ? 140 : 100, hh = hs.includes("diss") ? 150 : 140;
+                drawSpr(hs, hx, hy, hw, hh, hero.fr);
+                
+                for (const b of bullets) drawImg('bullet', b.x - cameraX - 17, b.y - 17, 35, 35);
+                if (hero.ur) drawImg('10diss', hx + 25, hy - 30, 50, 25);
+                if (hero.ua && hero.uph === 3 && hero.uot > 0) {
+                    ctx.fillStyle = "rgba(0,0,0,0.7)"; ctx.fillRect(0, 0, W, H);
+                    drawImg('10diss', W/2-175, H/2-87, 350, 175);
+                }
+                if (dissShow) drawImg('10diss', W/2-150, H/2-75, 300, 150);
+                
+                const hpP = hero.hp / hero.maxHp;
+                let hpI = hpP > 0.8 ? 0 : hpP > 0.5 ? 1 : hpP > 0.25 ? 2 : hpP > 0 ? 3 : 4;
+                drawImg('hero_hp_' + (hpI+1), 10, 10, 200, 40);
+                
+                if (!hero.alive) {
+                    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
+                    ctx.fillStyle = "#f00"; ctx.font = "48px Arial"; ctx.fillText("GAME OVER", W/2-120, H/2-20);
+                    ctx.fillStyle = "#fff"; ctx.font = "18px Arial"; ctx.fillText("R — попробовать еще раз", W/2-100, H/2+20);
+                }
+                
+                if (dialogSt !== DIALOG_NONE) {
+                    ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.fillRect(50, H-180, W-100, 140);
+                    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.strokeRect(50, H-180, W-100, 140);
+                    ctx.fillStyle = "#fff"; ctx.font = "18px Arial";
+                    if (dialogSt === DIALOG_REPLICA) {
+                        ctx.fillText(dialogRep, 70, H-150);
+                        ctx.fillStyle = "#969696"; ctx.fillText("Нажми E чтобы продолжить", 70, H-110);
+                    } else if (dialogSt === DIALOG_CHOICES) {
+                        ctx.fillText("Твой ответ:", 70, H-150);
+                        for (let i = 0; i < dialogCh.length; i++) {
+                            ctx.fillStyle = "#ff0";
+                            ctx.fillText((i+1) + ". " + dialogCh[i], 90, H-120+i*25);
+                        }
+                    }
+                }
             }
-            if(levelTitleTimer>0)levelTitleTimer-=dt;
-            keyJustPressed={};
+            if (lvlTitleTimer > 0) {
+                ctx.fillStyle = "#ff0"; ctx.font = "48px Arial";
+                ctx.fillText(lvlTitle, W/2 - ctx.measureText(lvlTitle).width/2, H/2-30);
+            }
         }
 
-        function loop(ts){
-            const dt=Math.min((ts-lastTime)/1000,0.1);
-            lastTime=ts;
+        // ============================================================
+        // ИГРОВОЙ ЦИКЛ
+        // ============================================================
+        let lastTime = 0;
+        
+        function update(dt) {
+            if (dt > 0.1) dt = 0.1;
+            if (!gameStarted) return;
+            
+            if (gameState === ST_START) {
+                if (keys['ArrowLeft'] || keys['KeyA']) { hero.x -= hero.speed; hero.fr = false; hero.wt += dt; }
+                else if (keys['ArrowRight'] || keys['KeyD']) { hero.x += hero.speed; hero.fr = true; hero.wt += dt; }
+                else { hero.wt = 0; hero.wf = 0; }
+                if (hero.wt > 0.15) { hero.wt = 0; hero.wf = 1 - hero.wf; }
+                if (hero.x < 0) hero.x = 0; if (hero.x > 700) hero.x = 700;
+                hero.y = GROUND - 30;
+                if (!bv && hero.x > 300) bv = true;
+                if (bv && !btDone) {
+                    btTimer += dt;
+                    while (btTimer >= btSpeed && btIdx < btFull.length) { btDisp += btFull[btIdx]; btIdx++; btTimer -= btSpeed; }
+                    if (btIdx >= btFull.length) btDone = true;
+                }
+                if (btDone && kp['KeyE']) pv = true;
+                if (pv && !hep && hero.x > px - 30) { hep = true; hpt = 1.0; }
+                if (hep) {
+                    hpt -= dt; hero.x = px;
+                    if (hpt <= 0) {
+                        gameState = ST_LEVEL1; lvlTitle = "ПЕРВЫЙ УРОВЕНЬ"; lvlTitleTimer = 2.0;
+                        hero.x = 50; hero.y = GROUND - 140; hero.vy = 0; hero.alive = true; hero.hp = 50;
+                        hero.hc = 0; hero.onGround = false; hero.mb = 0; cameraX = 0;
+                        bullets = []; ebullets = []; hero.rh = 0; hero.ur = false; hero.ua = false;
+                    }
+                }
+            } else if (gameState === ST_LEVEL1) {
+                if (!hero.ua && !dialogAct && hero.alive) {
+                    let m = false;
+                    if (keys['ArrowLeft'] || keys['KeyA']) { hero.x -= hero.speed; hero.fr = false; m = true; }
+                    if (keys['ArrowRight'] || keys['KeyD']) { hero.x += hero.speed; hero.fr = true; m = true; }
+                    if (m) hero.wt += dt; else { hero.wt = 0; hero.wf = 0; }
+                    if (hero.wt > 0.15) { hero.wt = 0; hero.wf = 1 - hero.wf; }
+                    if ((keys['Space'] || kp['Space']) && hero.onGround) { hero.vy = hero.jp; hero.onGround = false; }
+                    hero.vy += GRAV; hero.y += hero.vy;
+                    if (hero.y >= GROUND) { hero.y = GROUND; hero.vy = 0; hero.onGround = true; }
+                    if (hero.x < 0) hero.x = 0; if (hero.x > WORLD_W - 100) hero.x = WORLD_W - 100;
+                    if (hero.hc > 0) hero.hc -= dt;
+                    if (hero.hp <= 0 && hero.alive) { hero.alive = false; hero.vy = -10; hero.onGround = false; }
+                    
+                    if ((keys['KeyF'] || kp['KeyF']) && hero.at <= 0) {
+                        hero.at = 0.3; hero.isAtt = true;
+                        for (const e of enemies) {
+                            if (e.alive && Math.abs(hero.x - e.x) < 80) {
+                                if (e.st === "dead") {
+                                    if (hero.x < e.x) e.x += 200; else e.x -= 200;
+                                    if (e.x < 0) e.x = 0; if (e.x > WORLD_W - 135) e.x = WORLD_W - 135;
+                                } else {
+                                    if (e.t !== "simak") { e.hp -= (3 + hero.mb); e.ht = 0.3; }
+                                    if (hero.x < e.x) e.x += 20; else e.x -= 20;
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if ((keys['KeyG'] || kp['KeyG']) && hero.rc <= 0) {
+                        hero.rc = 0.5; hero.isDiss = true; hero.at = 0.3; hero.dyoff = -25;
+                        bullets.push({x: hero.x + (hero.fr ? 40 : -40), y: hero.y + 40, dir: hero.fr ? 1 : -1, dist: 0});
+                    }
+                }
+                
+                if (hero.at > 0) hero.at -= dt; else { hero.isAtt = false; hero.isDiss = false; hero.dyoff = 0; }
+                if (hero.rc > 0) hero.rc -= dt;
+                
+                for (let i = bullets.length-1; i >= 0; i--) {
+                    const b = bullets[i]; b.x += 8 * b.dir; b.dist += 8;
+                    let hit = false;
+                    for (const e of enemies) {
+                        if (e.alive && e.st !== "dead") {
+                            if (e.t === "simak" && !dialogComp) continue;
+                            if (Math.abs(b.x - e.x) < 125 && Math.abs(b.y - (e.y + 80)) < 60) {
+                                e.hp -= 1; e.ht = 0.3; hero.rh++;
+                                if (hero.rh >= hero.rhn && !hero.ur) hero.ur = true;
+                                bullets.splice(i, 1); hit = true; break;
+                            }
+                        }
+                    }
+                    if (!hit && b.dist > 640) bullets.splice(i, 1);
+                }
+                
+                for (let i = ebullets.length-1; i >= 0; i--) {
+                    const b = ebullets[i]; b.x += b.speed * b.dir; b.dist += Math.abs(b.speed);
+                    let hit = false;
+                    if (hero.alive && hero.onGround && Math.abs(b.x - hero.x) < 40 && Math.abs(b.y - (hero.y + 70)) < 50) {
+                        let dmg = b.dmg; if (hero.ua) dmg = Math.max(1, dmg - 1);
+                        hero.hp -= dmg; hero.hc = 0.5; hit = true;
+                    }
+                    if (hit || b.dist > b.maxDist) ebullets.splice(i, 1);
+                }
+                
+                if (hero.ua) {
+                    hero.ut -= dt;
+                    if (hero.uph === 1 && hero.ut <= 0) { hero.uph = 2; hero.ut = 0.45; }
+                    else if (hero.uph === 2 && hero.ut <= 0) {
+                        hero.uph = 3; hero.ut = 1.0; hero.uot = 1.0;
+                        for (const e of enemies) {
+                            if (e.alive && e.st !== "dead" && Math.abs(hero.x - e.x) < 350) { e.hp -= 8; e.ht = 0.5; }
+                        }
+                    } else if (hero.uph === 3 && hero.ut <= 0) { hero.ua = false; hero.uph = 0; }
+                    if (hero.uot > 0) hero.uot -= dt;
+                }
+                
+                if (!dialogAct && !dialogComp) {
+                    for (const e of enemies) {
+                        if (e.t === "simak" && e.alive && e.st !== "dead" && Math.abs(hero.x - e.x) < 100 && hero.onGround) {
+                            dialogAct = true;
+                            drp("Я тебя ждал...", () => {
+                                drp("Ты думал, что пройдёшь в финал КБС?", () => {
+                                    dch(["Я люблю акростихи", "Иван Симак", "Ты не видел мою ногу?"], (c) => {
+                                        if (c === 0) h1(); else if (c === 1) h2(); else h3();
+                                    });
+                                });
+                            });
+                            break;
+                        }
+                    }
+                }
+                
+                if (!dialogAct) {
+                    for (const e of enemies) {
+                        if (!e.alive) continue;
+                        const dx = hero.x - e.x, adx = Math.abs(dx);
+                        if (e.ht > 0) e.ht -= dt;
+                        if (e.hc > 0) e.hc -= dt;
+                        if (e.sc > 0) e.sc -= dt;
+                        if (adx < e.ar) e.sh = true;
+                        if (e.st === "landing") { e.y += 4; if (e.y >= GROUND - 30) { e.y = GROUND - 30; e.st = "chase"; } }
+                        if (e.st === "chase" || e.st === "idle") {
+                            if (e.t !== "simak" || e.st === "chase" || dialogComp) {
+                                if (e.sh || adx < e.ar) {
+                                    e.st = "chase";
+                                    if (e.atyp === "ranged") {
+                                        if (dx > 200) e.x += e.sp; else if (dx < -200) e.x -= e.sp;
+                                        if (e.sc <= 0 && adx < 400) {
+                                            e.sc = 1.2; e.hc = 0.5;
+                                            ebullets.push({x: e.x, y: e.y + 80, dir: hero.x > e.x ? 1 : -1, speed: 5, dist: 0, maxDist: 500, dmg: e.dmg});
+                                        }
+                                    } else {
+                                        if (dx > 15) e.x += e.sp; else if (dx < -15) e.x -= e.sp;
+                                    }
+                                }
+                            }
+                        }
+                        if (e.x < 0) e.x = 0; if (e.x > WORLD_W - 135) e.x = WORLD_W - 135;
+                        if (e.atyp === "melee" && e.st === "chase" && adx < 50 && hero.alive && hero.onGround && hero.hc <= 0 && e.hc <= 0) {
+                            let dmg = e.dmg; if (hero.ua) dmg = Math.max(1, dmg - 1);
+                            hero.hp -= dmg; hero.hc = 1.5; e.hc = 0.7;
+                            if (hero.x < e.x) { hero.x -= 40; hero.vy = -8; } else { hero.x += 40; hero.vy = -8; }
+                            hero.onGround = false;
+                        }
+                        if (e.hp <= 0 && e.st !== "dead") {
+                            e.st = "dead";
+                            if (e.t === "simak") {
+                                e.y = GROUND + 15;
+                                e.alive = true; // Симак остаётся на экране
+                            } else {
+                                e.dt = 0.5; e.vy = -8;
+                            }
+                        }
+                        if (e.st === "dead" && e.t !== "simak") {
+                            e.dt -= dt;
+                            if (e.dt > 0) { e.y += e.vy; e.vy += GRAV; }
+                            else { e.y += 15; if (e.y > H + 200) e.alive = false; }
+                        }
+                    }
+                }
+                cameraX = hero.x - W/2;
+                if (cameraX < 0) cameraX = 0;
+                if (cameraX > WORLD_W - W) cameraX = WORLD_W - W;
+                if (dissShow) { dissTimer -= dt; if (dissTimer <= 0) dissShow = false; }
+            }
+            if (lvlTitleTimer > 0) lvlTitleTimer -= dt;
+            kp['KeyE'] = false; kp['KeyF'] = false; kp['KeyG'] = false; kp['Space'] = false;
+        }
+
+        function loop(ts) {
+            if (!gameStarted) { requestAnimationFrame(loop); return; }
+            if (lastTime === 0) lastTime = ts;
+            const dt = Math.min((ts - lastTime) / 1000, 0.1);
+            lastTime = ts;
             update(dt);
             render();
             requestAnimationFrame(loop);
         }
 
-        document.getElementById('startScreen').addEventListener('click', () => {
-            document.getElementById('startScreen').style.display = 'none';
+        // ============================================================
+        // УПРАВЛЕНИЕ
+        // ============================================================
+        document.getElementById('ui-overlay').addEventListener('click', () => {
+            document.getElementById('ui-overlay').style.display = 'none';
             gameStarted = true;
-            lastTime = performance.now();
+            lastTime = 0;
             requestAnimationFrame(loop);
         });
 
-        window.addEventListener('keydown',(e)=>{
-            if(!gameStarted) return;
-            keys[e.code]=true;keyJustPressed[e.code]=true;
-            if(e.code==='KeyE'&&dialogState===DIALOG_PRESS_E&&dialogNext){dialogNext();e.preventDefault();}
-            if(e.code==='Digit1'&&dialogState===DIALOG_CHOICES&&dialogChoices.length>=1&&dialogNext){dialogNext(0);e.preventDefault();}
-            if(e.code==='Digit2'&&dialogState===DIALOG_CHOICES&&dialogChoices.length>=2&&dialogNext){dialogNext(1);e.preventDefault();}
-            if(e.code==='Digit3'&&dialogState===DIALOG_CHOICES&&dialogChoices.length>=3&&dialogNext){dialogNext(2);e.preventDefault();}
-            if(e.code==='KeyT'&&hero.alive&&hero.ultReady&&!hero.ultActive&&gameState===STATE_LEVEL1){hero.ultActive=true;hero.ultPhase=1;hero.ultTimer=0.45;hero.rangedHits=0;hero.ultReady=false;}
-            if(e.code==='KeyR'&&!hero.alive&&gameState===STATE_LEVEL1){hero.x=50;hero.y=GROUND_Y-140;hero.vy=0;hero.hp=50;hero.alive=true;hero.hitCooldown=0;hero.onGround=false;hero.meleeBonus=0;hero.attackTimer=0;hero.isAttacking=false;hero.isDissing=false;hero.dissYOffset=0;hero.rangeCooldown=0;bullets=[];enemyBullets=[];enemies=createEnemies();dialogActive=false;dialogState=DIALOG_NONE;dialogComplete=false;hero.ultActive=false;hero.ultPhase=0;hero.ultReady=false;hero.rangedHits=0;dissShow=false;}
-            if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();
+         window.addEventListener('keydown', (e) => {
+            if (e.code === 'Escape') {
+                // Перезагрузка страницы — быстрый выход
+                document.getElementById('ui-overlay').style.display = 'flex';
+                document.getElementById('ui-overlay').style.background = '#000';
+                document.getElementById('start-img').style.display = 'none';
+                gameStarted = false;
+                gameState = ST_START;
+                hero = {
+                    x:50, y:GROUND-140, vy:0, speed:5, jp:-22, onGround:false, fr:true,
+                    hp:50, maxHp:50, hc:0, alive:true, mb:0,
+                    wt:0, wf:0, at:0, isAtt:false, isDiss:false, dyoff:0,
+                    rc:0, rh:0, rhn:10, ur:false, ua:false, uph:0, ut:0, uot:0
+                };
+                bullets = []; ebullets = []; enemies = mkEnemies();
+                dialogSt = DIALOG_NONE; dialogAct = false; dialogComp = false;
+                bv = false; btDisp = ""; btIdx = 0; btTimer = 0; btDone = false;
+                pv = false; hep = false; hpt = 0;
+                lvlTitle = ""; lvlTitleTimer = 0;
+                cameraX = 0;
+                dissShow = false; dissTimer = 0;
+                for (const k in keys) keys[k] = false;
+                return;
+            }
+            if (!gameStarted) return;
+            keys[e.code] = true;
+            if (e.code === 'KeyE') kp['KeyE'] = true;
+            if (e.code === 'KeyF') kp['KeyF'] = true;
+            if (e.code === 'KeyG') kp['KeyG'] = true;
+            if (e.code === 'Space') { kp['Space'] = true; e.preventDefault(); }
+            
+            if (e.code === 'KeyE' && dialogSt === DIALOG_REPLICA && dialogNxt) { dialogNxt(); e.preventDefault(); }
+            if (e.code === 'Digit1' && dialogSt === DIALOG_CHOICES && dialogCh.length >= 1 && dialogNxt) { dialogNxt(0); e.preventDefault(); }
+            if (e.code === 'Digit2' && dialogSt === DIALOG_CHOICES && dialogCh.length >= 2 && dialogNxt) { dialogNxt(1); e.preventDefault(); }
+            if (e.code === 'Digit3' && dialogSt === DIALOG_CHOICES && dialogCh.length >= 3 && dialogNxt) { dialogNxt(2); e.preventDefault(); }
+            if (e.code === 'KeyT' && hero.alive && hero.ur && !hero.ua && gameState === ST_LEVEL1) {
+                hero.ua = true; hero.uph = 1; hero.ut = 0.45; hero.rh = 0; hero.ur = false;
+            }
+            if (e.code === 'KeyR' && !hero.alive && gameState === ST_LEVEL1) {
+                hero.x = 50; hero.y = GROUND - 140; hero.vy = 0; hero.hp = 50; hero.alive = true;
+                hero.hc = 0; hero.onGround = false; hero.mb = 0; hero.at = 0;
+                hero.isAtt = false; hero.isDiss = false; hero.dyoff = 0; hero.rc = 0;
+                bullets = []; ebullets = []; enemies = mkEnemies();
+                dialogAct = false; dialogSt = DIALOG_NONE; dialogComp = false;
+                hero.ua = false; hero.uph = 0; hero.ur = false; hero.rh = 0; dissShow = false;
+            }
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
         });
-        window.addEventListener('keyup',(e)=>{keys[e.code]=false;});
+        window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-        function stb(id,code){const btn=document.getElementById(id);if(!btn)return;btn.addEventListener('pointerdown',(e)=>{if(!gameStarted)return;e.preventDefault();keys[code]=true;keyJustPressed[code]=true;});btn.addEventListener('pointerup',(e)=>{e.preventDefault();keys[code]=false;});btn.addEventListener('pointerleave',()=>{keys[code]=false;});}
-        stb('btn-left','KeyA');stb('btn-right','KeyD');stb('btn-jump','Space');stb('btn-melee','KeyF');stb('btn-range','KeyG');stb('btn-ult','KeyT');stb('btn-interact','KeyE');
+        function stb(id, code) {
+            const btn = document.getElementById(id);
+            if (!btn) return;
+            btn.addEventListener('pointerdown', (e) => {
+                if (!gameStarted) return;
+                e.preventDefault();
+                keys[code] = true;
+                if (code === 'KeyE') kp['KeyE'] = true;
+                if (code === 'KeyF') kp['KeyF'] = true;
+                if (code === 'KeyG') kp['KeyG'] = true;
+                if (code === 'Space') kp['Space'] = true;
+            });
+            btn.addEventListener('pointerup', (e) => { e.preventDefault(); keys[code] = false; });
+            btn.addEventListener('pointerleave', () => { keys[code] = false; });
+        }
+        stb('btn-left', 'KeyA');
+        stb('btn-right', 'KeyD');
+        stb('btn-jump', 'Space');
+        stb('btn-melee', 'KeyF');
+        stb('btn-range', 'KeyG');
+        stb('btn-ult', 'KeyT');
+        stb('btn-interact', 'KeyE');
 
+        // ============================================================
+        // ЗАПУСК ЗАГРУЗКИ
+        // ============================================================
         loadAll();
     </script>
 </body>
