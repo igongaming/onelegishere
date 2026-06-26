@@ -582,10 +582,10 @@
                             }
                         }
                         if (e.x < 0) e.x = 0; if (e.x > WORLD_W - 135) e.x = WORLD_W - 135;
-                        if (e.atyp === "melee" && e.st === "chase" && adx < 50 && hero.alive && hero.onGround && hero.hc <= 0 && e.hc <= 0) {
+                            if (e.atyp === "melee" && e.st === "chase" && adx < 50 && hero.alive && hero.onGround && hero.hc <= 0 && e.hc <= 0) {
                             let dmg = e.dmg; if (hero.ua) dmg = Math.max(1, dmg - 1);
-                            hero.hp -= dmg; hero.hc = 1.5; e.hc = 0.7;
-                            if (hero.x < e.x) { hero.x -= 40; } else { hero.x += 40; }
+                            hero.hp -= dmg; hero.hc = 0.08; e.hc = 0.7;
+                            hero.at = 0.08;
                         }
                         if (e.hp <= 0 && e.st !== "dead") {
                             e.st = "dead";
