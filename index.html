@@ -596,7 +596,7 @@
         }
 
         function startPulseLoop() {
-            startPulse += 0.225 * startPulseDir;
+            startPulse += 1.35 * startPulseDir;
             if (startPulse > 15) startPulseDir = -1;
             if (startPulse < -15) startPulseDir = 1;
             const startImg = document.getElementById('start-img');
