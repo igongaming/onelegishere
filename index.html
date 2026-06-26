@@ -44,7 +44,18 @@
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: #fff; font-family: Arial; font-size: 24px; z-index: 200;
         }
-        @media (min-width: 1024px) { #controls { display: none; } }
+        #dialog-numbers {
+            position: fixed; top: 10px; left: 50%; transform: translateX(-50%);
+            display: none; gap: 20px; z-index: 150;
+        }
+        .dialog-num {
+            width: 50px; height: 50px; border-radius: 50%;
+            border: 2px solid #ff0; background: rgba(0,0,0,0.7);
+            color: #ff0; font-size: 24px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; -webkit-tap-highlight-color: transparent;
+        }
+        .dialog-num:active { background: rgba(255,255,0,0.3); }
+        @media (min-width: 1024px) { #controls { display: none; } #dialog-numbers { display: none !important; } }
     </style>
 </head>
 <body>
@@ -52,6 +63,11 @@
     <div id="loading-text">Загрузка... 0%</div>
     <div id="ui-overlay" style="display:none;">
         <img src="10diss.png" alt="Начать игру" id="start-img">
+    </div>
+    <div id="dialog-numbers">
+        <button class="dialog-num" id="dnum1">1</button>
+        <button class="dialog-num" id="dnum2">2</button>
+        <button class="dialog-num" id="dnum3">3</button>
     </div>
     <div id="controls">
         <div id="row1">
@@ -144,10 +160,11 @@
         const WORLD_W = 8000, GROUND = 450, GRAV = 0.8;
 
         let hero = {
-            x:50, y:GROUND-140, vy:0, speed:5, jp:-22, onGround:false, fr:true,
+            x:50, y:GROUND-140, vy:0, speed:4.75, jp:-22, onGround:false, fr:true,
             hp:50, maxHp:50, hc:0, alive:true, mb:0,
             wt:0, wf:0, at:0, isAtt:false, isDiss:false, dyoff:0,
-            rc:0, rh:0, rhn:10, ur:false, ua:false, uph:0, ut:0, uot:0
+            rc:0, rh:0, rhn:10, ur:false, ua:false, uph:0, ut:0, uot:0,
+            jumpPressed: false
         };
         
         let bullets = [], ebullets = [], enemies = [];
@@ -193,14 +210,23 @@
         // ============================================================
         // ДИАЛОГ
         // ============================================================
-        function drp(text, next) { dialogSt = DIALOG_REPLICA; dialogRep = text; dialogNxt = next; }
-        function dch(choices, next) { dialogSt = DIALOG_CHOICES; dialogCh = choices; dialogNxt = next; }
-        function dend() { dialogSt = DIALOG_NONE; dialogAct = false; dialogComp = true; }
+        function drp(text, next) { dialogSt = DIALOG_REPLICA; dialogRep = text; dialogNxt = next; updateDialogUI(); }
+        function dch(choices, next) { dialogSt = DIALOG_CHOICES; dialogCh = choices; dialogNxt = next; updateDialogUI(); }
+        function dend() { dialogSt = DIALOG_NONE; dialogAct = false; dialogComp = true; updateDialogUI(); }
         function hhd(d) { hero.hp -= d; if (hero.hp <= 0) hero.hp = 1; dend(); }
         function bsim() { for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp += 20; e.maxHp += 20; e.dmg += 1; } dend(); }
         function ksim() { for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp = 0; e.st = "dead"; e.y = GROUND + 15; simakDied = true; endingActive = true; endingTimer = 2.7; } dend(); }
         function spj(c, t) { let sx = 5700; for (const e of enemies) if (e.t === "simak") { sx = e.x; break; } for (let i = 0; i < c; i++) { enemies.push({ t, x: sx + 150 + i * 80, y: GROUND - 30, hp: 4, maxHp: 4, sp: 2, dmg: t === "judge1" ? 2 : (t === "judge2" ? 2 : 1), fr: true, ar: t === "judge1" ? 370 : 320, hc: 0, wt: 0, wf: 0, alive: true, ht: 0, st: "idle", dt: 0, vy: 0, atyp: t === "judge1" ? "ranged" : "melee", sc: 0, sh: true }); } dend(); }
         function bboth() { hero.hp += 5; hero.mb += 2; for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp += 5; e.maxHp += 5; e.dmg += 2; } dend(); }
+        
+        function updateDialogUI() {
+            const dn = document.getElementById('dialog-numbers');
+            if (dialogSt === DIALOG_CHOICES && window.innerWidth < 1024) {
+                dn.style.display = 'flex';
+            } else {
+                dn.style.display = 'none';
+            }
+        }
         
         function h1() { drp("Караван идет", () => dend()); }
         function h2() {
@@ -305,7 +331,6 @@
                     const bx = i * 800 - cameraX;
                     if (bx + 800 > 0 && bx < W && bgImgs[i]) ctx.drawImage(bgImgs[i], bx, 0, 800, 600);
                 }
-                // Враги: simak отзеркаливается, judge всегда без отражения
                 for (const e of enemies) { 
                     if (!e.alive) continue; 
                     const fr = (e.t === "simak") ? e.fr : true;
@@ -407,7 +432,7 @@
                 if (keys['ArrowLeft'] || keys['KeyA']) { hero.x -= hero.speed; hero.fr = false; hero.wt += dt; }
                 else if (keys['ArrowRight'] || keys['KeyD']) { hero.x += hero.speed; hero.fr = true; hero.wt += dt; }
                 else { hero.wt = 0; hero.wf = 0; }
-                if (hero.wt > 0.15) { hero.wt = 0; hero.wf = 1 - hero.wf; }
+                if (hero.wt > 0.165) { hero.wt = 0; hero.wf = 1 - hero.wf; }
                 if (hero.x < 0) hero.x = 0; if (hero.x > 700) hero.x = 700;
                 hero.y = GROUND - 30;
                 if (!bv && hero.x > 300) bv = true;
@@ -434,17 +459,25 @@
                     if (keys['ArrowLeft'] || keys['KeyA']) { hero.x -= hero.speed; hero.fr = false; m = true; }
                     if (keys['ArrowRight'] || keys['KeyD']) { hero.x += hero.speed; hero.fr = true; m = true; }
                     if (m) hero.wt += dt; else { hero.wt = 0; hero.wf = 0; }
-                    if (hero.wt > 0.15) { hero.wt = 0; hero.wf = 1 - hero.wf; }
-                    if (kp['Space'] && hero.onGround) { hero.vy = hero.jp; hero.onGround = false; kp['Space'] = false; }
-                    else { kp['Space'] = false; }
+                    if (hero.wt > 0.165) { hero.wt = 0; hero.wf = 1 - hero.wf; }
+                    
+                    if (kp['Space'] && hero.onGround) {
+                        hero.vy = hero.jp;
+                        hero.onGround = false;
+                        hero.jumpPressed = true;
+                    }
+                    if (!keys['Space'] && !kp['Space']) {
+                        hero.jumpPressed = false;
+                    }
+                    
                     hero.vy += GRAV; hero.y += hero.vy;
-                    if (hero.y >= GROUND) { hero.y = GROUND; hero.vy = 0; hero.onGround = true; }
+                    if (hero.y >= GROUND) { hero.y = GROUND; hero.vy = 0; hero.onGround = true; hero.jumpPressed = false; }
                     if (hero.x < 0) hero.x = 0; if (hero.x > WORLD_W - 100) hero.x = WORLD_W - 100;
                     if (hero.hc > 0) hero.hc -= dt;
                     if (hero.hp <= 0 && hero.alive) { hero.alive = false; hero.vy = -10; hero.onGround = false; }
                     
                     if (kp['KeyF'] && hero.at <= 0) {
-                        hero.at = 0.3; hero.isAtt = true; kp['KeyF'] = false;
+                        hero.at = 0.3; hero.isAtt = true;
                         for (const e of enemies) {
                             if (e.alive && Math.abs(hero.x - e.x) < 80) {
                                 if (e.st === "dead") {
@@ -457,11 +490,11 @@
                                 break;
                             }
                         }
-                    } else { kp['KeyF'] = false; }
+                    }
                     if (kp['KeyG'] && hero.rc <= 0) {
-                        hero.rc = 0.5; hero.isDiss = true; hero.at = 0.3; hero.dyoff = -25; kp['KeyG'] = false;
+                        hero.rc = 0.5; hero.isDiss = true; hero.at = 0.3; hero.dyoff = -25;
                         bullets.push({x: hero.x + (hero.fr ? 40 : -40), y: hero.y + 40, dir: hero.fr ? 1 : -1, dist: 0});
-                    } else { kp['KeyG'] = false; }
+                    }
                 }
                 
                 if (hero.at > 0) hero.at -= dt; else { hero.isAtt = false; hero.isDiss = false; hero.dyoff = 0; }
@@ -626,6 +659,16 @@
             requestAnimationFrame(gameLoop);
         });
 
+        // Кнопки диалога для мобильных
+        function triggerDialogChoice(num) {
+            if (dialogSt === DIALOG_CHOICES && dialogCh.length > num && dialogNxt) {
+                dialogNxt(num);
+            }
+        }
+        document.getElementById('dnum1').addEventListener('click', () => triggerDialogChoice(0));
+        document.getElementById('dnum2').addEventListener('click', () => triggerDialogChoice(1));
+        document.getElementById('dnum3').addEventListener('click', () => triggerDialogChoice(2));
+
         window.addEventListener('keydown', (e) => {
             if (e.code === 'Escape') {
                 if (!gameStarted) return;
@@ -654,6 +697,7 @@
                 dialogAct = false; dialogSt = DIALOG_NONE; dialogComp = false;
                 hero.ua = false; hero.uph = 0; hero.ur = false; hero.rh = 0; dissShow = false;
                 simakDied = false; endingActive = false; endingTimer = 2.7; endingFade = 0;
+                updateDialogUI();
             }
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
         });
@@ -681,6 +725,7 @@
                     dialogAct = false; dialogSt = DIALOG_NONE; dialogComp = false;
                     hero.ua = false; hero.uph = 0; hero.ur = false; hero.rh = 0; dissShow = false;
                     simakDied = false; endingActive = false; endingTimer = 2.7; endingFade = 0;
+                    updateDialogUI();
                 }
             });
             btn.addEventListener('pointerup', (e) => { e.preventDefault(); keys[code] = false; });
