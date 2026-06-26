@@ -596,13 +596,13 @@
         }
 
         function startPulseLoop() {
-            startPulse += 0.7 * startPulseDir;
+            startPulse += 1.7 * startPulseDir;
             if (startPulse > 25) startPulseDir = -1;
             if (startPulse < -25) startPulseDir = 1;
             const startImg = document.getElementById('start-img');
             if (startImg && !gameStarted) {
                 const base = Math.min(window.innerWidth, window.innerHeight) * 0.6;
-                const w = base + startPulse * 8
+                const w = base + startPulse * 3
                 const h = w * 0.5;
                 startImg.style.width = w + 'px';
                 startImg.style.height = h + 'px';
