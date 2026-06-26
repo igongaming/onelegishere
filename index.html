@@ -159,6 +159,8 @@
         let lvlTitle = "", lvlTitleTimer = 0;
         let cameraX = 0;
         let gameStarted = false;
+        let startPulse = 0;
+        let startPulseDir = 1;
         
         const keys = {}, kp = {};
 
@@ -236,18 +238,29 @@
             if (w && h) ctx.drawImage(img, x, y, w, h);
             else ctx.drawImage(img, x, y);
         }
-        function getEspr(e) {
+                function getEspr(e) {
             if (e.st === "dead") {
                 if (e.t === "simak") return "simak_dead";
                 return e.t + "_idle";
             }
-            if (e.ht > 0) return e.t + "_hurt";
-            if (e.st === "chase" && e.hc > 0) return e.t + "_hitting";
-            if (e.st === "chase" && Math.abs(hero.x - e.x) > 15) {
-                e.wt = (e.wt || 0) + 0.016;
-                if (e.wt > 0.2) { e.wt = 0; e.wf = 1 - (e.wf || 0); }
-                return e.t + "_walk" + ((e.wf || 0) === 0 ? "1" : "2");
+            if (e.ht > 0) {
+                if (e.t === "simak") return "simak_hurt";
+                return e.t + "_hit";
             }
+            if (e.st === "chase" && e.hc > 0) {
+                if (e.t === "simak") return "simak_hitting";
+                return e.t + "_hit";
+            }
+            // Для ходьбы — используем idle (т.к. нет отдельных walk-спрайтов для judge)
+            if (e.st === "chase" && Math.abs(hero.x - e.x) > 15) {
+                if (e.t === "simak") {
+                    e.wt = (e.wt || 0) + 0.016;
+                    if (e.wt > 0.2) { e.wt = 0; e.wf = 1 - (e.wf || 0); }
+                    return "simak_walk" + ((e.wf || 0) === 0 ? "1" : "2");
+                }
+                return e.t + "_idle";
+            }
+            if (e.t === "simak") return "simak_idle";
             return e.t + "_idle";
         }
 
@@ -517,7 +530,23 @@
         }
 
         function loop(ts) {
-            if (!gameStarted) { requestAnimationFrame(loop); return; }
+            if (!gameStarted) {
+                // Пульсация стартового экрана
+                startPulse += 0.02 * startPulseDir;
+                if (startPulse > 70) startPulseDir = -1;
+                if (startPulse < 0) startPulseDir = 1;
+                const startImg = document.getElementById('start-img');
+                if (startImg) {
+                    const base = Math.min(window.innerWidth, window.innerHeight) * 0.6;
+                    const w = base + startPulse;
+                    const h = w * 0.5;
+                    startImg.style.width = w + 'px';
+                    startImg.style.height = h + 'px';
+                }
+                requestAnimationFrame(loop);
+                return;
+            }
+            // ... остальной код loop
             if (lastTime === 0) lastTime = ts;
             const dt = Math.min((ts - lastTime) / 1000, 0.1);
             lastTime = ts;
