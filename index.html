@@ -247,28 +247,29 @@
             else ctx.drawImage(img, x, y);
         }
         function getEspr(e) {
+            const t = e.t;
             if (e.st === "dead") {
-                if (e.t === "simak") return "simak_dead";
-                return e.t + "_idle";
+                if (t === "simak") return "simak_dead";
+                return t + "_idle";
             }
             if (e.ht > 0) {
-                if (e.t === "simak") return "simak_hurt";
-                return e.t + "_hit";
+                if (t === "simak") return "simak_hurt";
+                return t + "_hit";
             }
             if (e.st === "chase" && e.hc > 0) {
-                if (e.t === "simak") return "simak_hitting";
-                return e.t + "_hit";
+                if (t === "simak") return "simak_hitting";
+                return t + "_hit";
             }
             if (e.st === "chase" && Math.abs(hero.x - e.x) > 15) {
-                if (e.t === "simak") {
+                if (t === "simak") {
                     e.wt = (e.wt || 0) + 0.016;
                     if (e.wt > 0.2) { e.wt = 0; e.wf = 1 - (e.wf || 0); }
                     return "simak_walk" + ((e.wf || 0) === 0 ? "1" : "2");
                 }
-                return e.t + "_idle";
+                return t + "_idle";
             }
-            if (e.t === "simak") return "simak_idle";
-            return e.t + "_idle";
+            if (t === "simak") return "simak_idle";
+            return t + "_idle";
         }
 
         function render() {
@@ -509,8 +510,9 @@
                                             e.sc = 1.2; e.hc = 0.5;
                                             ebullets.push({x: e.x, y: e.y + 80, dir: hero.x > e.x ? 1 : -1, speed: 5, dist: 0, maxDist: 500, dmg: e.dmg});
                                         }
-                                    } else {
-                                        if (dx > 15) e.x += e.sp; else if (dx < -15) e.x -= e.sp;
+                                        } else {
+                                        if (dx > 15) { e.x += e.sp; e.fr = true; }
+                                        else if (dx < -15) { e.x -= e.sp; e.fr = false; }
                                     }
                                 }
                             }
@@ -546,14 +548,15 @@
 
         function loop(ts) {
             if (!gameStarted) {
-                startPulse += 0.02 * startPulseDir;
-                if (startPulse > 70) startPulseDir = -1;
-                if (startPulse < 0) startPulseDir = 1;
+                startPulse += 0.03 * startPulseDir;
+                if (startPulse > 50) startPulseDir = -1;
+                if (startPulse < -50) startPulseDir = 1;
                 const startImg = document.getElementById('start-img');
                 if (startImg) {
-                    const base = Math.min(window.innerWidth, window.innerHeight) * 0.6;
-                    const pw = base + startPulse;
-                    const ph = pw * 0.5;
+                    const baseW = Math.min(window.innerWidth, window.innerHeight) * 0.6;
+                    const baseH = baseW * 0.5;
+                    const pw = baseW + startPulse;
+                    const ph = baseH + startPulse * 0.5;
                     startImg.style.width = pw + 'px';
                     startImg.style.height = ph + 'px';
                 }
