@@ -18,9 +18,9 @@
             -webkit-user-select: none;
             user-select: none;
         }
-        canvas { display: block; max-width: 100vw; max-height: 100vh; }
+        canvas { display: block; max-width: 100vw; max-height: 85vh; margin-top: -5vh; }
         #controls {
-            position: fixed; bottom: 10px; left: 0; right: 0;
+            position: fixed; bottom: 5px; left: 0; right: 0;
             display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; justify-content: center;
             padding: 0 10px;
         }
@@ -39,7 +39,7 @@
             display: flex; align-items: center; justify-content: center;
             z-index: 100; cursor: pointer; background: #000;
         }
-        #ui-overlay img { max-width: 60%; max-height: 60%; transition: width 0.05s, height 0.05s; }
+        #ui-overlay img { max-width: 60%; max-height: 60%; transition: transform 0.05s; }
         #loading-text {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: #fff; font-family: Arial; font-size: 24px; z-index: 200;
@@ -64,6 +64,7 @@
             <button class="btn btn-small" id="btn-range">G</button>
             <button class="btn btn-small" id="btn-ult">T</button>
             <button class="btn btn-small" id="btn-interact">E</button>
+            <button class="btn btn-small" id="btn-restart">R</button>
         </div>
     </div>
 
@@ -92,7 +93,7 @@
         const bgImgs = new Array(10).fill(null);
         
         const IMG_NAMES = [
-            'bg_start','babka','portal',
+            'bg_start','babka','portal','maska',
             'hero_stand','hero_walk1','hero_walk2','hero_jump','hero_hitting','hero_diss',
             'hero_ult_1','hero_ult_2','hero_ult_3',
             'bullet','10diss',
@@ -158,6 +159,7 @@
         let dialogSt = DIALOG_NONE, dialogAct = false, dialogComp = false;
         let dialogRep = "", dialogCh = [], dialogNxt = null;
         let dissShow = false, dissTimer = 0;
+        let endingActive = false, endingTimer = 0, endingFade = 0;
         
         let bv = false, btFull = "Am I glad to see you! The LEG...and I...and, well, everybody...we're all trapped inside the castle walls. Короче, Меченый, иди и ищи свою ногу. А то пока что НЕНАХОД.";
         let btDisp = "", btIdx = 0, btTimer = 0, btSpeed = 0.03, btDone = false;
@@ -301,7 +303,7 @@
                     const bx = i * 800 - cameraX;
                     if (bx + 800 > 0 && bx < W && bgImgs[i]) ctx.drawImage(bgImgs[i], bx, 0, 800, 600);
                 }
-                for (const e of enemies) { if (!e.alive) continue; drawSpr(getEspr(e), e.x - cameraX, e.y, 135, 180, e.fr); }
+                for (const e of enemies) { if (!e.alive) continue; drawSpr(getEspr(e), e.x - cameraX, e.y, 135, 180, true); }
                 for (const b of ebullets) drawImg('bullet', b.x - cameraX - 12, b.y - 12, 25, 25);
                 
                 let hs = "hero_stand";
@@ -313,7 +315,8 @@
                 else if (hero.wt > 0) hs = "hero_walk" + (hero.wf === 0 ? "1" : "2");
                 const hx = hero.x - cameraX, hy = hero.y + hero.dyoff;
                 const hw = hs.includes("diss") ? 140 : 100, hh = hs.includes("diss") ? 150 : 140;
-                drawSpr(hs, hx, hy, hw, hh, hero.fr);
+                const useFr = hs.includes("diss") ? true : hero.fr;
+                drawSpr(hs, hx, hy, hw, hh, useFr);
                 
                 for (const b of bullets) drawImg('bullet', b.x - cameraX - 17, b.y - 17, 35, 35);
                 if (hero.ur) drawImg('10diss', hx + 25, hy - 30, 50, 25);
@@ -326,6 +329,14 @@
                 const hpP = hero.hp / hero.maxHp;
                 let hpI = hpP > 0.8 ? 0 : hpP > 0.5 ? 1 : hpP > 0.25 ? 2 : hpP > 0 ? 3 : 4;
                 drawImg('hero_hp_' + (hpI+1), 10, 10, 200, 40);
+                
+                // Легенда управления
+                ctx.fillStyle = "rgba(255,255,255,0.6)";
+                ctx.font = "11px Arial";
+                ctx.fillText("←→ / A D — перемещение", W - 200, H - 60);
+                ctx.fillText("ПРОБЕЛ — прыжок", W - 200, H - 45);
+                ctx.fillText("F — пинок | G — дисс", W - 200, H - 30);
+                ctx.fillText("T — ульта | ESC — пауза", W - 200, H - 15);
                 
                 if (!hero.alive) {
                     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
@@ -347,6 +358,18 @@
                             ctx.fillText((i+1) + ". " + dialogCh[i], 90, H-120+i*25);
                         }
                     }
+                }
+            }
+            
+            // Концовка
+            if (endingActive && endingFade > 0) {
+                ctx.fillStyle = "rgba(0,0,0," + endingFade + ")";
+                ctx.fillRect(0, 0, W, H);
+                if (endingFade >= 1) {
+                    drawImg('maska', W/2 - 75, H/2 - 100, 150, 150);
+                    ctx.fillStyle = "#fff";
+                    ctx.font = "24px Arial";
+                    ctx.fillText("ПРОДОЛЖЕНИЕ СЛЕДУЕТ...", W/2 - 150, H/2 + 70);
                 }
             }
             
@@ -400,7 +423,7 @@
                     }
                 }
             } else if (gameState === ST_LEVEL1) {
-                if (!hero.ua && !dialogAct && hero.alive) {
+                if (!hero.ua && !dialogAct && hero.alive && endingFade < 1) {
                     let m = false;
                     if (keys['ArrowLeft'] || keys['KeyA']) { hero.x -= hero.speed; hero.fr = false; m = true; }
                     if (keys['ArrowRight'] || keys['KeyD']) { hero.x += hero.speed; hero.fr = true; m = true; }
@@ -510,9 +533,8 @@
                                             e.sc = 1.2; e.hc = 0.5;
                                             ebullets.push({x: e.x, y: e.y + 80, dir: hero.x > e.x ? 1 : -1, speed: 5, dist: 0, maxDist: 500, dmg: e.dmg});
                                         }
-                                        } else {
-                                        if (dx > 15) { e.x += e.sp; e.fr = true; }
-                                        else if (dx < -15) { e.x -= e.sp; e.fr = false; }
+                                    } else {
+                                        if (dx > 15) e.x += e.sp; else if (dx < -15) e.x -= e.sp;
                                     }
                                 }
                             }
@@ -526,7 +548,13 @@
                         }
                         if (e.hp <= 0 && e.st !== "dead") {
                             e.st = "dead";
-                            if (e.t === "simak") { e.y = GROUND + 15; e.alive = true; }
+                            if (e.t === "simak") { 
+                                e.y = GROUND + 15; e.alive = true;
+                                if (!endingActive) {
+                                    endingActive = true;
+                                    endingTimer = 5.0;
+                                }
+                            }
                             else { e.dt = 0.5; e.vy = -8; }
                         }
                         if (e.st === "dead" && e.t !== "simak") {
@@ -536,29 +564,34 @@
                         }
                     }
                 }
+                
+                if (endingActive) {
+                    endingTimer -= dt;
+                    if (endingTimer <= 0 && endingFade < 1) {
+                        endingFade += dt * 0.5;
+                        if (endingFade > 1) endingFade = 1;
+                    }
+                }
+                
                 cameraX = hero.x - W/2;
                 if (cameraX < 0) cameraX = 0;
                 if (cameraX > WORLD_W - W) cameraX = WORLD_W - W;
                 if (dissShow) { dissTimer -= dt; if (dissTimer <= 0) dissShow = false; }
             }
             if (lvlTitleTimer > 0) lvlTitleTimer -= dt;
-            // Сброс однократных нажатий
             for (const k in kp) kp[k] = false;
         }
 
         function loop(ts) {
             if (!gameStarted) {
-                startPulse += 0.03 * startPulseDir;
-                if (startPulse > 50) startPulseDir = -1;
-                if (startPulse < -50) startPulseDir = 1;
+                const pulseSpeed = 0.04;
+                startPulse += pulseSpeed * startPulseDir;
+                if (startPulse > 30) startPulseDir = -1;
+                if (startPulse < -30) startPulseDir = 1;
                 const startImg = document.getElementById('start-img');
                 if (startImg) {
-                    const baseW = Math.min(window.innerWidth, window.innerHeight) * 0.6;
-                    const baseH = baseW * 0.5;
-                    const pw = baseW + startPulse;
-                    const ph = baseH + startPulse * 0.5;
-                    startImg.style.width = pw + 'px';
-                    startImg.style.height = ph + 'px';
+                    const scale = 1 + startPulse / 100;
+                    startImg.style.transform = 'scale(' + scale + ')';
                 }
                 requestAnimationFrame(loop);
                 return;
@@ -608,6 +641,7 @@
                 bullets = []; ebullets = []; enemies = mkEnemies();
                 dialogAct = false; dialogSt = DIALOG_NONE; dialogComp = false;
                 hero.ua = false; hero.uph = 0; hero.ur = false; hero.rh = 0; dissShow = false;
+                endingActive = false; endingTimer = 0; endingFade = 0;
             }
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
         });
@@ -627,6 +661,15 @@
                 if (code === 'KeyT' && hero.alive && hero.ur && !hero.ua && gameState === ST_LEVEL1) {
                     hero.ua = true; hero.uph = 1; hero.ut = 0.45; hero.rh = 0; hero.ur = false;
                 }
+                if (code === 'KeyR' && !hero.alive && gameState === ST_LEVEL1) {
+                    hero.x = 50; hero.y = GROUND - 140; hero.vy = 0; hero.hp = 50; hero.alive = true;
+                    hero.hc = 0; hero.onGround = false; hero.mb = 0; hero.at = 0;
+                    hero.isAtt = false; hero.isDiss = false; hero.dyoff = 0; hero.rc = 0;
+                    bullets = []; ebullets = []; enemies = mkEnemies();
+                    dialogAct = false; dialogSt = DIALOG_NONE; dialogComp = false;
+                    hero.ua = false; hero.uph = 0; hero.ur = false; hero.rh = 0; dissShow = false;
+                    endingActive = false; endingTimer = 0; endingFade = 0;
+                }
             });
             btn.addEventListener('pointerup', (e) => { e.preventDefault(); keys[code] = false; });
             btn.addEventListener('pointerleave', () => { keys[code] = false; });
@@ -638,6 +681,7 @@
         stb('btn-range', 'KeyG');
         stb('btn-ult', 'KeyT');
         stb('btn-interact', 'KeyE');
+        stb('btn-restart', 'KeyR');
 
         loadAll();
     </script>
