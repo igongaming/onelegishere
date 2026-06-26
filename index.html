@@ -20,23 +20,26 @@
         }
         canvas { display: block; max-width: 100vw; max-height: 100vh; }
         #controls {
-            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-            display: flex; gap: 10px; z-index: 10; flex-wrap: wrap; justify-content: center;
+            position: fixed; bottom: 10px; left: 0; right: 0;
+            display: flex; gap: 8px; z-index: 10; flex-wrap: wrap; justify-content: center;
+            padding: 0 10px;
         }
         .btn {
-            width: 60px; height: 60px; border-radius: 50%;
-            border: 2px solid rgba(255,255,255,0.5); background: rgba(0,0,0,0.5);
-            color: #fff; font-size: 24px; display: flex; align-items: center; justify-content: center;
+            width: 50px; height: 50px; border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.5); background: rgba(0,0,0,0.6);
+            color: #fff; font-size: 20px; display: flex; align-items: center; justify-content: center;
             cursor: pointer; -webkit-tap-highlight-color: transparent;
         }
         .btn:active { background: rgba(255,255,255,0.3); }
-        .btn-small { width: 45px; height: 45px; font-size: 16px; }
+        .btn-small { width: 40px; height: 40px; font-size: 14px; }
+        #row1 { display: flex; gap: 8px; justify-content: center; width: 100%; }
+        #row2 { display: flex; gap: 8px; justify-content: center; width: 100%; }
         #ui-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             display: flex; align-items: center; justify-content: center;
             z-index: 100; cursor: pointer; background: #000;
         }
-        #ui-overlay img { max-width: 80%; max-height: 80%; }
+        #ui-overlay img { max-width: 60%; max-height: 60%; transition: width 0.05s, height 0.05s; }
         #loading-text {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: #fff; font-family: Arial; font-size: 24px; z-index: 200;
@@ -51,13 +54,17 @@
         <img src="10diss.png" alt="Начать игру" id="start-img">
     </div>
     <div id="controls">
-        <button class="btn" id="btn-left">◀</button>
-        <button class="btn" id="btn-right">▶</button>
-        <button class="btn" id="btn-jump">▲</button>
-        <button class="btn btn-small" id="btn-melee">F</button>
-        <button class="btn btn-small" id="btn-range">G</button>
-        <button class="btn btn-small" id="btn-ult">T</button>
-        <button class="btn btn-small" id="btn-interact">E</button>
+        <div id="row1">
+            <button class="btn" id="btn-left">◀</button>
+            <button class="btn" id="btn-jump">▲</button>
+            <button class="btn" id="btn-right">▶</button>
+        </div>
+        <div id="row2">
+            <button class="btn btn-small" id="btn-melee">F</button>
+            <button class="btn btn-small" id="btn-range">G</button>
+            <button class="btn btn-small" id="btn-ult">T</button>
+            <button class="btn btn-small" id="btn-interact">E</button>
+        </div>
     </div>
 
     <script>
@@ -124,7 +131,8 @@
                 tasks.push(loadImage(name).then(img => { imgs[name] = img; }));
             }
             for (let i = 1; i <= 10; i++) {
-                tasks.push(loadImage('bg_' + i).then(img => { bgImgs[i-1] = img; }));
+                const idx = i - 1;
+                tasks.push(loadImage('bg_' + i).then(img => { bgImgs[idx] = img; }));
             }
             await Promise.all(tasks);
             document.getElementById('loading-text').style.display = 'none';
@@ -139,7 +147,6 @@
         const DIALOG_NONE = 0, DIALOG_REPLICA = 1, DIALOG_CHOICES = 2;
         const WORLD_W = 8000, GROUND = 450, GRAV = 0.8;
 
-        // Герой
         let hero = {
             x:50, y:GROUND-140, vy:0, speed:5, jp:-22, onGround:false, fr:true,
             hp:50, maxHp:50, hc:0, alive:true, mb:0,
@@ -152,17 +159,18 @@
         let dialogRep = "", dialogCh = [], dialogNxt = null;
         let dissShow = false, dissTimer = 0;
         
-        // Старт
         let bv = false, btFull = "Am I glad to see you! The LEG...and I...and, well, everybody...we're all trapped inside the castle walls. Короче, Меченый, иди и ищи свою ногу. А то пока что НЕНАХОД.";
         let btDisp = "", btIdx = 0, btTimer = 0, btSpeed = 0.03, btDone = false;
         let pv = false, px = 650, py = GROUND-25, hep = false, hpt = 0;
         let lvlTitle = "", lvlTitleTimer = 0;
         let cameraX = 0;
         let gameStarted = false;
+        let gamePaused = false;
         let startPulse = 0;
         let startPulseDir = 1;
         
-        const keys = {}, kp = {};
+        const keys = {};
+        let kp = {};
 
         // ============================================================
         // ВРАГИ
@@ -238,7 +246,7 @@
             if (w && h) ctx.drawImage(img, x, y, w, h);
             else ctx.drawImage(img, x, y);
         }
-                function getEspr(e) {
+        function getEspr(e) {
             if (e.st === "dead") {
                 if (e.t === "simak") return "simak_dead";
                 return e.t + "_idle";
@@ -251,7 +259,6 @@
                 if (e.t === "simak") return "simak_hitting";
                 return e.t + "_hit";
             }
-            // Для ходьбы — используем idle (т.к. нет отдельных walk-спрайтов для judge)
             if (e.st === "chase" && Math.abs(hero.x - e.x) > 15) {
                 if (e.t === "simak") {
                     e.wt = (e.wt || 0) + 0.016;
@@ -282,8 +289,8 @@
                         else { lines.push(line); line = w; }
                     }
                     if (line) lines.push(line);
-                    for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], 185, H/2-50+i*22);
-                    if (btDone) { ctx.fillStyle = "#969696"; ctx.fillText("Нажми E", 650, H/2+35); }
+                    for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], 185, H/2-40+i*22);
+                    if (btDone) { ctx.fillStyle = "#969696"; ctx.fillText("Нажми E", 650, H/2+45); }
                 }
                 if (pv) drawImg('portal', px, py, 80, 120);
                 let sn = hep ? "hero_jump" : (hero.wt > 0 ? "hero_walk" + (hero.wf === 0 ? "1" : "2") : "hero_stand");
@@ -341,6 +348,17 @@
                     }
                 }
             }
+            
+            if (gamePaused) {
+                ctx.fillStyle = "rgba(0,0,0,0.7)";
+                ctx.fillRect(0, 0, W, H);
+                ctx.fillStyle = "#fff";
+                ctx.font = "36px Arial";
+                ctx.fillText("ПАУЗА", W/2 - 80, H/2 - 30);
+                ctx.font = "18px Arial";
+                ctx.fillText("Нажми ESC чтобы продолжить", W/2 - 130, H/2 + 10);
+            }
+            
             if (lvlTitleTimer > 0) {
                 ctx.fillStyle = "#ff0"; ctx.font = "48px Arial";
                 ctx.fillText(lvlTitle, W/2 - ctx.measureText(lvlTitle).width/2, H/2-30);
@@ -354,7 +372,7 @@
         
         function update(dt) {
             if (dt > 0.1) dt = 0.1;
-            if (!gameStarted) return;
+            if (!gameStarted || gamePaused) return;
             
             if (gameState === ST_START) {
                 if (keys['ArrowLeft'] || keys['KeyA']) { hero.x -= hero.speed; hero.fr = false; hero.wt += dt; }
@@ -369,7 +387,7 @@
                     while (btTimer >= btSpeed && btIdx < btFull.length) { btDisp += btFull[btIdx]; btIdx++; btTimer -= btSpeed; }
                     if (btIdx >= btFull.length) btDone = true;
                 }
-                if (btDone && kp['KeyE']) pv = true;
+                if (btDone && kp['KeyE']) { pv = true; kp['KeyE'] = false; }
                 if (pv && !hep && hero.x > px - 30) { hep = true; hpt = 1.0; }
                 if (hep) {
                     hpt -= dt; hero.x = px;
@@ -387,15 +405,15 @@
                     if (keys['ArrowRight'] || keys['KeyD']) { hero.x += hero.speed; hero.fr = true; m = true; }
                     if (m) hero.wt += dt; else { hero.wt = 0; hero.wf = 0; }
                     if (hero.wt > 0.15) { hero.wt = 0; hero.wf = 1 - hero.wf; }
-                    if ((keys['Space'] || kp['Space']) && hero.onGround) { hero.vy = hero.jp; hero.onGround = false; }
+                    if (kp['Space'] && hero.onGround) { hero.vy = hero.jp; hero.onGround = false; kp['Space'] = false; }
                     hero.vy += GRAV; hero.y += hero.vy;
                     if (hero.y >= GROUND) { hero.y = GROUND; hero.vy = 0; hero.onGround = true; }
                     if (hero.x < 0) hero.x = 0; if (hero.x > WORLD_W - 100) hero.x = WORLD_W - 100;
                     if (hero.hc > 0) hero.hc -= dt;
                     if (hero.hp <= 0 && hero.alive) { hero.alive = false; hero.vy = -10; hero.onGround = false; }
                     
-                    if ((keys['KeyF'] || kp['KeyF']) && hero.at <= 0) {
-                        hero.at = 0.3; hero.isAtt = true;
+                    if (kp['KeyF'] && hero.at <= 0) {
+                        hero.at = 0.3; hero.isAtt = true; kp['KeyF'] = false;
                         for (const e of enemies) {
                             if (e.alive && Math.abs(hero.x - e.x) < 80) {
                                 if (e.st === "dead") {
@@ -409,8 +427,8 @@
                             }
                         }
                     }
-                    if ((keys['KeyG'] || kp['KeyG']) && hero.rc <= 0) {
-                        hero.rc = 0.5; hero.isDiss = true; hero.at = 0.3; hero.dyoff = -25;
+                    if (kp['KeyG'] && hero.rc <= 0) {
+                        hero.rc = 0.5; hero.isDiss = true; hero.at = 0.3; hero.dyoff = -25; kp['KeyG'] = false;
                         bullets.push({x: hero.x + (hero.fr ? 40 : -40), y: hero.y + 40, dir: hero.fr ? 1 : -1, dist: 0});
                     }
                 }
@@ -506,12 +524,8 @@
                         }
                         if (e.hp <= 0 && e.st !== "dead") {
                             e.st = "dead";
-                            if (e.t === "simak") {
-                                e.y = GROUND + 15;
-                                e.alive = true; // Симак остаётся на экране
-                            } else {
-                                e.dt = 0.5; e.vy = -8;
-                            }
+                            if (e.t === "simak") { e.y = GROUND + 15; e.alive = true; }
+                            else { e.dt = 0.5; e.vy = -8; }
                         }
                         if (e.st === "dead" && e.t !== "simak") {
                             e.dt -= dt;
@@ -526,27 +540,26 @@
                 if (dissShow) { dissTimer -= dt; if (dissTimer <= 0) dissShow = false; }
             }
             if (lvlTitleTimer > 0) lvlTitleTimer -= dt;
-            kp['KeyE'] = false; kp['KeyF'] = false; kp['KeyG'] = false; kp['Space'] = false;
+            // Сброс однократных нажатий
+            for (const k in kp) kp[k] = false;
         }
 
         function loop(ts) {
             if (!gameStarted) {
-                // Пульсация стартового экрана
                 startPulse += 0.02 * startPulseDir;
                 if (startPulse > 70) startPulseDir = -1;
                 if (startPulse < 0) startPulseDir = 1;
                 const startImg = document.getElementById('start-img');
                 if (startImg) {
                     const base = Math.min(window.innerWidth, window.innerHeight) * 0.6;
-                    const w = base + startPulse;
-                    const h = w * 0.5;
-                    startImg.style.width = w + 'px';
-                    startImg.style.height = h + 'px';
+                    const pw = base + startPulse;
+                    const ph = pw * 0.5;
+                    startImg.style.width = pw + 'px';
+                    startImg.style.height = ph + 'px';
                 }
                 requestAnimationFrame(loop);
                 return;
             }
-            // ... остальной код loop
             if (lastTime === 0) lastTime = ts;
             const dt = Math.min((ts - lastTime) / 1000, 0.1);
             lastTime = ts;
@@ -565,31 +578,13 @@
             requestAnimationFrame(loop);
         });
 
-         window.addEventListener('keydown', (e) => {
+        window.addEventListener('keydown', (e) => {
             if (e.code === 'Escape') {
-                // Перезагрузка страницы — быстрый выход
-                document.getElementById('ui-overlay').style.display = 'flex';
-                document.getElementById('ui-overlay').style.background = '#000';
-                document.getElementById('start-img').style.display = 'none';
-                gameStarted = false;
-                gameState = ST_START;
-                hero = {
-                    x:50, y:GROUND-140, vy:0, speed:5, jp:-22, onGround:false, fr:true,
-                    hp:50, maxHp:50, hc:0, alive:true, mb:0,
-                    wt:0, wf:0, at:0, isAtt:false, isDiss:false, dyoff:0,
-                    rc:0, rh:0, rhn:10, ur:false, ua:false, uph:0, ut:0, uot:0
-                };
-                bullets = []; ebullets = []; enemies = mkEnemies();
-                dialogSt = DIALOG_NONE; dialogAct = false; dialogComp = false;
-                bv = false; btDisp = ""; btIdx = 0; btTimer = 0; btDone = false;
-                pv = false; hep = false; hpt = 0;
-                lvlTitle = ""; lvlTitleTimer = 0;
-                cameraX = 0;
-                dissShow = false; dissTimer = 0;
-                for (const k in keys) keys[k] = false;
+                if (!gameStarted) return;
+                gamePaused = !gamePaused;
                 return;
             }
-            if (!gameStarted) return;
+            if (!gameStarted || gamePaused) return;
             keys[e.code] = true;
             if (e.code === 'KeyE') kp['KeyE'] = true;
             if (e.code === 'KeyF') kp['KeyF'] = true;
@@ -619,13 +614,16 @@
             const btn = document.getElementById(id);
             if (!btn) return;
             btn.addEventListener('pointerdown', (e) => {
-                if (!gameStarted) return;
+                if (!gameStarted || gamePaused) return;
                 e.preventDefault();
                 keys[code] = true;
                 if (code === 'KeyE') kp['KeyE'] = true;
                 if (code === 'KeyF') kp['KeyF'] = true;
                 if (code === 'KeyG') kp['KeyG'] = true;
                 if (code === 'Space') kp['Space'] = true;
+                if (code === 'KeyT' && hero.alive && hero.ur && !hero.ua && gameState === ST_LEVEL1) {
+                    hero.ua = true; hero.uph = 1; hero.ut = 0.45; hero.rh = 0; hero.ur = false;
+                }
             });
             btn.addEventListener('pointerup', (e) => { e.preventDefault(); keys[code] = false; });
             btn.addEventListener('pointerleave', () => { keys[code] = false; });
@@ -638,9 +636,6 @@
         stb('btn-ult', 'KeyT');
         stb('btn-interact', 'KeyE');
 
-        // ============================================================
-        // ЗАПУСК ЗАГРУЗКИ
-        // ============================================================
         loadAll();
     </script>
 </body>
