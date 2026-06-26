@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>LEG FINDER SIMULATOR</title>
+    <title>ОДНА НОГА ЗДЕСЬ v 1.1</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -298,6 +298,12 @@
                 if (pv) drawImg('portal', px, py, 80, 120);
                 let sn = hep ? "hero_jump" : (hero.wt > 0 ? "hero_walk" + (hero.wf === 0 ? "1" : "2") : "hero_stand");
                 drawSpr(sn, hero.x, hero.y, 100, 140, hero.fr);
+                
+                // Легенда в стартовой локации
+                ctx.fillStyle = "rgba(255,255,255,0.5)";
+                ctx.font = "11px Arial";
+                ctx.fillText("←→ / A D — перемещение", W - 200, H - 60);
+                ctx.fillText("E — взаимодействие", W - 200, H - 45);
             } else if (gameState === ST_LEVEL1) {
                 for (let i = 0; i < bgImgs.length; i++) {
                     const bx = i * 800 - cameraX;
@@ -330,7 +336,7 @@
                 let hpI = hpP > 0.8 ? 0 : hpP > 0.5 ? 1 : hpP > 0.25 ? 2 : hpP > 0 ? 3 : 4;
                 drawImg('hero_hp_' + (hpI+1), 10, 10, 200, 40);
                 
-                // Легенда управления
+                // Легенда управления (полная)
                 ctx.fillStyle = "rgba(255,255,255,0.6)";
                 ctx.font = "11px Arial";
                 ctx.fillText("←→ / A D — перемещение", W - 200, H - 60);
@@ -552,7 +558,7 @@
                                 e.y = GROUND + 15; e.alive = true;
                                 if (!endingActive) {
                                     endingActive = true;
-                                    endingTimer = 5.0;
+                                    endingTimer = 2.7;
                                 }
                             }
                             else { e.dt = 0.5; e.vy = -8; }
@@ -568,7 +574,7 @@
                 if (endingActive) {
                     endingTimer -= dt;
                     if (endingTimer <= 0 && endingFade < 1) {
-                        endingFade += dt * 0.5;
+                        endingFade += dt * 0.7;
                         if (endingFade > 1) endingFade = 1;
                     }
                 }
@@ -584,10 +590,10 @@
 
         function loop(ts) {
             if (!gameStarted) {
-                const pulseSpeed = 0.04;
+                const pulseSpeed = 0.06;
                 startPulse += pulseSpeed * startPulseDir;
-                if (startPulse > 30) startPulseDir = -1;
-                if (startPulse < -30) startPulseDir = 1;
+                if (startPulse > 25) startPulseDir = -1;
+                if (startPulse < -25) startPulseDir = 1;
                 const startImg = document.getElementById('start-img');
                 if (startImg) {
                     const scale = 1 + startPulse / 100;
