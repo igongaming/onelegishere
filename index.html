@@ -585,8 +585,7 @@
                         if (e.atyp === "melee" && e.st === "chase" && adx < 50 && hero.alive && hero.onGround && hero.hc <= 0 && e.hc <= 0) {
                             let dmg = e.dmg; if (hero.ua) dmg = Math.max(1, dmg - 1);
                             hero.hp -= dmg; hero.hc = 1.5; e.hc = 0.7;
-                            if (hero.x < e.x) { hero.x -= 40; hero.vy = -8; } else { hero.x += 40; hero.vy = -8; }
-                            hero.onGround = false;
+                            if (hero.x < e.x) { hero.x -= 40; } else { hero.x += 40; }
                         }
                         if (e.hp <= 0 && e.st !== "dead") {
                             e.st = "dead";
@@ -659,7 +658,6 @@
             requestAnimationFrame(gameLoop);
         });
 
-        // Кнопки диалога для мобильных
         function triggerDialogChoice(num) {
             if (dialogSt === DIALOG_CHOICES && dialogCh.length > num && dialogNxt) {
                 dialogNxt(num);
@@ -677,7 +675,13 @@
             }
             if (!gameStarted || gamePaused) return;
             keys[e.code] = true;
-            if (e.code === 'KeyE') kp['KeyE'] = true;
+            if (e.code === 'KeyE') {
+                kp['KeyE'] = true;
+                if (dialogSt === DIALOG_REPLICA && dialogNxt) {
+                    dialogNxt();
+                    e.preventDefault();
+                }
+            }
             if (e.code === 'KeyF') kp['KeyF'] = true;
             if (e.code === 'KeyG') kp['KeyG'] = true;
             if (e.code === 'Space') { kp['Space'] = true; e.preventDefault(); }
@@ -710,7 +714,12 @@
                 if (!gameStarted || gamePaused) return;
                 e.preventDefault();
                 keys[code] = true;
-                if (code === 'KeyE') kp['KeyE'] = true;
+                if (code === 'KeyE') {
+                    kp['KeyE'] = true;
+                    if (dialogSt === DIALOG_REPLICA && dialogNxt) {
+                        dialogNxt();
+                    }
+                }
                 if (code === 'KeyF') kp['KeyF'] = true;
                 if (code === 'KeyG') kp['KeyG'] = true;
                 if (code === 'Space') kp['Space'] = true;
