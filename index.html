@@ -596,16 +596,16 @@
         }
 
         function startPulseLoop() {
-            startPulse += 1.7 * startPulseDir;
-            if (startPulse > 25) startPulseDir = -1;
-            if (startPulse < -25) startPulseDir = 1;
+            startPulse += 0.225 * startPulseDir;
+            if (startPulse > 15) startPulseDir = -1;
+            if (startPulse < -15) startPulseDir = 1;
             const startImg = document.getElementById('start-img');
             if (startImg && !gameStarted) {
                 const base = Math.min(window.innerWidth, window.innerHeight) * 0.6;
-                const w = base + startPulse * 3
-                const h = w * 0.5;
-                startImg.style.width = w + 'px';
-                startImg.style.height = h + 'px';
+                const scale = 1 + startPulse / 100;
+                startImg.style.transform = 'scale(' + scale + ')';
+                startImg.style.width = 'auto';
+                startImg.style.height = 'auto';
                 pulseRAF = requestAnimationFrame(startPulseLoop);
             }
         }
