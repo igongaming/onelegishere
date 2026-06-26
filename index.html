@@ -197,7 +197,7 @@
         function dend() { dialogSt = DIALOG_NONE; dialogAct = false; dialogComp = true; }
         function hhd(d) { hero.hp -= d; if (hero.hp <= 0) hero.hp = 1; dend(); }
         function bsim() { for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp += 20; e.maxHp += 20; e.dmg += 1; } dend(); }
-        function ksim() { for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp = 0; e.st = "dead"; e.y = GROUND + 15; simakDied = true; } dend(); }
+        function ksim() { for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp = 0; e.st = "dead"; e.y = GROUND + 15; simakDied = true; endingActive = true; endingTimer = 2.7; } dend(); }
         function spj(c, t) { let sx = 5700; for (const e of enemies) if (e.t === "simak") { sx = e.x; break; } for (let i = 0; i < c; i++) { enemies.push({ t, x: sx + 150 + i * 80, y: GROUND - 30, hp: 4, maxHp: 4, sp: 2, dmg: t === "judge1" ? 2 : (t === "judge2" ? 2 : 1), fr: true, ar: t === "judge1" ? 370 : 320, hc: 0, wt: 0, wf: 0, alive: true, ht: 0, st: "idle", dt: 0, vy: 0, atyp: t === "judge1" ? "ranged" : "melee", sc: 0, sh: true }); } dend(); }
         function bboth() { hero.hp += 5; hero.mb += 2; for (const e of enemies) if (e.t === "simak" && e.alive && e.st !== "dead") { e.hp += 5; e.maxHp += 5; e.dmg += 2; } dend(); }
         
@@ -361,8 +361,7 @@
                 }
             }
             
-            // Концовка
-            if (endingActive) {
+            if (endingActive && endingFade > 0) {
                 ctx.fillStyle = "rgba(0,0,0," + Math.min(endingFade, 1) + ")";
                 ctx.fillRect(0, 0, W, H);
                 if (endingFade >= 1) {
@@ -551,9 +550,11 @@
                             e.st = "dead";
                             if (e.t === "simak") { 
                                 e.y = GROUND + 15; e.alive = true;
-                                simakDied = true;
-                                endingActive = true;
-                                endingTimer = 2.7;
+                                if (!simakDied) {
+                                    simakDied = true;
+                                    endingActive = true;
+                                    endingTimer = 2.7;
+                                }
                             }
                             else { e.dt = 0.5; e.vy = -8; }
                         }
@@ -584,13 +585,11 @@
 
         function loop(ts) {
             if (!gameStarted) {
-                const pulseSpeed = 0.05;
-                startPulse += pulseSpeed * startPulseDir;
+                startPulse += 0.05 * startPulseDir;
                 if (startPulse > 25) startPulseDir = -1;
                 if (startPulse < -25) startPulseDir = 1;
                 const startImg = document.getElementById('start-img');
                 if (startImg) {
-                    const scale = 1 + startPulse / 100;
                     startImg.style.width = (60 + startPulse * 0.6) + '%';
                     startImg.style.height = 'auto';
                 }
