@@ -39,7 +39,7 @@
             display: flex; align-items: center; justify-content: center;
             z-index: 100; cursor: pointer; background: #000;
         }
-        #ui-overlay img { max-width: 60%; max-height: 60%; transition: transform 0.05s; }
+        #ui-overlay img { max-width: 60%; max-height: 60%; }
         #loading-text {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             color: #fff; font-family: Arial; font-size: 24px; z-index: 200;
@@ -368,8 +368,8 @@
             }
             
             // Концовка
-            if (endingActive && endingFade > 0) {
-                ctx.fillStyle = "rgba(0,0,0," + endingFade + ")";
+            if (endingActive && endingTimer <= 0 && endingFade > 0) {
+                ctx.fillStyle = "rgba(0,0,0," + Math.min(endingFade, 1) + ")";
                 ctx.fillRect(0, 0, W, H);
                 if (endingFade >= 1) {
                     drawImg('maska', W/2 - 75, H/2 - 100, 150, 150);
@@ -552,13 +552,12 @@
                             if (hero.x < e.x) { hero.x -= 40; hero.vy = -8; } else { hero.x += 40; hero.vy = -8; }
                             hero.onGround = false;
                         }
-                        if (e.hp <= 0 && e.st !== "dead") {
-                            e.st = "dead";
                             if (e.t === "simak") { 
                                 e.y = GROUND + 15; e.alive = true;
                                 if (!endingActive) {
                                     endingActive = true;
                                     endingTimer = 2.7;
+                                    console.log('ENDING STARTED: simak defeated');
                                 }
                             }
                             else { e.dt = 0.5; e.vy = -8; }
@@ -573,11 +572,12 @@
                 
                 if (endingActive) {
                     endingTimer -= dt;
-                    if (endingTimer <= 0 && endingFade < 1) {
+                    if (endingTimer <= 0) {
                         endingFade += dt * 0.7;
-                        if (endingFade > 1) endingFade = 1;
+                        if (endingFade >= 1) {
+                            endingFade = 1;
+                        }
                     }
-                }
                 
                 cameraX = hero.x - W/2;
                 if (cameraX < 0) cameraX = 0;
@@ -590,14 +590,15 @@
 
         function loop(ts) {
             if (!gameStarted) {
-                const pulseSpeed = 0.06;
+                const pulseSpeed = 0.05;
                 startPulse += pulseSpeed * startPulseDir;
                 if (startPulse > 25) startPulseDir = -1;
                 if (startPulse < -25) startPulseDir = 1;
                 const startImg = document.getElementById('start-img');
                 if (startImg) {
                     const scale = 1 + startPulse / 100;
-                    startImg.style.transform = 'scale(' + scale + ')';
+                    startImg.style.width = (60 + startPulse * 0.6) + '%';
+                    startImg.style.height = 'auto';
                 }
                 requestAnimationFrame(loop);
                 return;
